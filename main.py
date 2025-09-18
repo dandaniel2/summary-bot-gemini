@@ -99,9 +99,10 @@ def extract_youtube_transcript(youtube_url):
         video_id = video_id_match.group(0) if video_id_match else None
         if video_id is None:
             return "no transcript"
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        ytt_api = YouTubeTranscriptApi()
+        transcript_list = ytt_api.list(video_id)
         transcript = transcript_list.find_transcript(['en', 'ja', 'ko', 'de', 'fr', 'ru', 'it', 'es', 'pl', 'uk', 'nl', 'zh-TW', 'zh-CN', 'zh-Hant', 'zh-Hans'])
-        transcript_text = ' '.join([item['text'] for item in transcript.fetch()])
+        transcript_text = ' '.join([item.text for item in transcript.fetch()])
         return transcript_text
     except Exception as e:
         print(f"Error: {e}")

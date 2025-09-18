@@ -20,4 +20,4 @@ PyPDF2==3.0.1
 python-telegram-bot==21.1.1
 
 # YouTube
-youtube_transcript_api==0.6.2
+youtube_transcript_api==1.2.2
