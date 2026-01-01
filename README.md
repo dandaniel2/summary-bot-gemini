@@ -1,57 +1,84 @@
-# Summary GPT Bot
+# 🤖 Summary Gemini Bot
 
-An AI-powered text summarization Telegram bot that generates concise summaries of text, URLs, PDFs and YouTube videos.
+An advanced Telegram bot powered by **Google Gemini** models. It generates concise summaries for text, articles, PDFs, YouTube videos, and even audio files.
 
-## Features
+This is a fork of [summary-gpt-bot](https://github.com/tpai/summary-gpt-bot) migrating from OpenAI to Google Gemini, with added support for audio processing and Telegram Mini Apps.
 
-- Supports text
-- Supports URLs
-- Supports PDFs
-- Supports YouTube videos (no support for YouTube Shorts)
+## ✨ Features
 
-## Usage
+- **📝 Text:** Summarizes long texts sent directly to the chat.
+- **🔗 URLs:** Scrapes and summarizes web pages and articles.
+- **📺 YouTube:** Fetches transcripts and summarizes videos (Video ID or URL).
+- **📄 PDF:** Extracts text from uploaded PDF files and summarizes them.
+- **🎤 Audio & Voice:** Summarizes voice messages and audio files (MP3, WAV, M4A, OGG) directly via Gemini's multimodal capabilities.
+- **📱 Mini App:** Supports a Web Interface (Telegram Mini App) for easier input.
+- **🔎 Explore:** Provides "Explore Similar" search results via DuckDuckGo.
 
-Launch a OpenAI GPT-4 summary bot that only can be used by your friends and you.
+## 🚀 Installation & Usage
 
-```sh
-docker run -d \
-    -e LLM_MODEL=gpt-4 \
-    -e OPENAI_API_KEY=$OPENAI_API_KEY \
-    -e TELEGRAM_TOKEN=$YOUR_TG_TOKEN \
-    -e TS_LANG=$YOUR_LANGUAGE \
-    -e ALLOWED_USERS=<friend1_id>,<friend2_id>,<your_id> \
-    tonypai/summary-gpt-bot:latest
+Since this is a custom version, you need to build the Docker image yourself.
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+cd YOUR_REPO_NAME
 ```
 
-Launch a summary bot using Azure OpenAI.
-
-```sh
-docker run -d \
-    -e AZURE_API_BASE=https://<your_azure_resource_name>.openai.azure.com \
-    -e AZURE_API_KEY=$AZURE_API_KEY \
-    -e AZURE_API_VERSION=2024-02-15-preview \
-    -e LLM_MODEL=azure/<your_deployment_name> \
-    -e TELEGRAM_TOKEN=$YOUR_TG_TOKEN \
-    -e TS_LANG=$YOUR_LANGUAGE \
-    tonypai/summary-gpt-bot:latest
+### 2. Build the Docker Image
+```bash
+docker build -t my-gemini-bot .
 ```
 
-LLM Variables
+### 3. Run the Container
 
-| Environment Variable | Description |
-|----------------------|-------------|
-| AZURE_API_BASE       | API URL base for AZURE OpenAI API |
-| AZURE_API_KEY        | API key for AZURE OpenAI API |
-| AZURE_API_VERSION    | API version for AZURE OpenAI API |
-| OPENAI_API_KEY       | API key for OpenAI API |
+```bash
+docker run -d \
+  --name gemini-summary-bot \
+  --restart always \
+  -e TELEGRAM_TOKEN="YOUR_TELEGRAM_BOT_TOKEN" \
+  -e GOOGLE_API_KEY="YOUR_GOOGLE_AI_STUDIO_KEY" \
+  -e LLM_MODEL="gemini-flash-lite-latest" \
+  -e TS_LANG="English" \
+  -e ALLOWED_USERS="12345678,87654321" \
+  my-gemini-bot
+```
 
-Bot Variables
+## ⚙️ Configuration Variables
 
-| Environment Variable | Description |
-|----------------------|-------------|
-| CHUNK_SIZE           | The maximum token of a chunk when receiving a large input (default: 10000) |
-| LLM_MODEL            | LLM Model to use for text summarization (default: gpt-3.5-turbo-16k) |
-| TELEGRAM_TOKEN       | Token for Telegram API (required) |
-| TS_LANG              | Language of the text to be summarized (default: Taiwanese Mandarin) |
-| DDG_REGION           | The region of the duckduckgo search (default: wt-wt) 👉[Regions](https://github.com/deedy5/duckduckgo_search#regions) |
-| ALLOWED_USERS        | A list of user IDs allowed to use. Asking @myidbot for Telegram ID (optional) |
+You can customize the bot's behavior using these environment variables:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `TELEGRAM_TOKEN` | **Required.** Your Telegram Bot API token (get from @BotFather). | - |
+| `GOOGLE_API_KEY` | **Required.** Your Google Gemini API key (get from [Google AI Studio](https://aistudio.google.com/)). | - |
+| `LLM_MODEL` | The Gemini model version to use. Recommended: `gemini-flash-lite-latest` or `gemini-1.5-flash`. | `gemini-flash-lite-latest` |
+| `TS_LANG` | The target language for the summary (e.g., `Russian`, `English`, `Spanish`). | `Russian` |
+| `ALLOWED_USERS` | Comma-separated list of Telegram User IDs allowed to use the bot. | (Open to all if empty) |
+| `CHUNK_SIZE` | Max characters per chunk. Gemini has a large context window, so we use a high value. | `100000` |
+| `WEBAPP_URL` | URL to your hosted Web App (HTML page) for the Mini App button. | (Optional) |
+| `DDG_REGION` | DuckDuckGo search region (e.g., `wt-wt`, `us-en`, `ru-ru`). | `wt-wt` |
+
+## 📱 Setting up the Mini App (Optional)
+
+To enable the "Open Mini App" button:
+1. Host the `index.html` file (e.g., on GitHub Pages).
+2. Set the `WEBAPP_URL` environment variable to your hosted URL.
+3. Configure the Menu Button in @BotFather pointing to that URL.
+
+## 🛠 Local Development
+
+If you want to run it without Docker:
+
+1. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Set environment variables (export or .env).
+3. Run the bot:
+   ```bash
+   python main.py
+   ```
+
+## 📜 License
+
+MIT License
