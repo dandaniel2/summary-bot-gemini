@@ -57,7 +57,7 @@ def scrape_text_from_url(url):
         print(f"Error scraping: {e}")
         return []
 
-# --- ПОИСК ЧЕРЕЗ GOOGLE API (Вместо DDG) ---
+# --- ПОИСК ЧЕРЕЗ GOOGLE API ---
 async def search_results(keywords):
     if not google_cse_id:
         print("❌ Ошибка: Не задан GOOGLE_CSE_ID")
@@ -75,7 +75,6 @@ async def search_results(keywords):
     try:
         loop = asyncio.get_running_loop()
         response = await loop.run_in_executor(None, lambda: requests.get(url, params=params))
-        
         data = response.json()
         
         if 'error' in data:
@@ -180,17 +179,61 @@ def call_gemini_api(prompt, system_instruction=None):
         print(f"Gemini API Error: {e}")
         return ""
 
-# --- YOUTUBE & FILES ---
+# --- YOUTUBE & FILES (Исправлен импорт) ---
 
 def extract_youtube_transcript(youtube_url):
     try:
         video_id_match = re.search(r"(?<=v=)[^&]+|(?<=youtu.be/)[^?|\n]+", youtube_url)
         video_id = video_id_match.group(0) if video_id_match else None
         if video_id is None: return "no transcript"
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-        transcript = transcript_list.find_transcript(['en', 'ru', 'ja', 'ko', 'de', 'fr'])
-        transcript_text = ' '.join([item['text'] for item in transcript.fetch()])
-        return transcript_text
+        
+        api = YouTubeTranscriptApi()
+        
+        try:
+            snippet = api.fetch(video_id, languages=['ru'])
+            if hasattr(snippet, 'to_raw_data'):
+                raw_data = snippet.to_raw_data()
+                transcript_text = ' '.join([item['text'] for item in raw_data])
+                print(f"Debug - Got Russian transcript via to_raw_data, length: {len(transcript_text)}")
+                return transcript_text
+            elif hasattr(snippet, 'snippets'):
+                transcript_text = ' '.join([item['text'] for item in snippet.snippets])
+                print(f"Debug - Got Russian transcript via snippets, length: {len(transcript_text)}")
+                return transcript_text
+        except Exception as e1:
+            print(f"Debug - Russian fetch: {type(e1).__name__}: {str(e1)[:50]}")
+        
+        try:
+            snippet = api.fetch(video_id, languages=['en'])
+            if hasattr(snippet, 'to_raw_data'):
+                raw_data = snippet.to_raw_data()
+                transcript_text = ' '.join([item['text'] for item in raw_data])
+                print(f"Debug - Got English transcript via to_raw_data, length: {len(transcript_text)}")
+                return transcript_text
+            elif hasattr(snippet, 'snippets'):
+                transcript_text = ' '.join([item['text'] for item in snippet.snippets])
+                print(f"Debug - Got English transcript via snippets, length: {len(transcript_text)}")
+                return transcript_text
+        except Exception as e2:
+            print(f"Debug - English fetch: {type(e2).__name__}")
+        
+        try:
+            snippet = api.fetch(video_id)
+            if hasattr(snippet, 'to_raw_data'):
+                raw_data = snippet.to_raw_data()
+                transcript_text = ' '.join([item['text'] for item in raw_data])
+                print(f"Debug - Got default transcript via to_raw_data, length: {len(transcript_text)}")
+                return transcript_text
+            elif hasattr(snippet, 'snippets'):
+                transcript_text = ' '.join([item['text'] for item in snippet.snippets])
+                print(f"Debug - Got default transcript via snippets, length: {len(transcript_text)}")
+                return transcript_text
+        except Exception as e3:
+            print(f"Debug - Default fetch: {type(e3).__name__}")
+        
+        print("Debug - Could not find any transcript")
+        return "no transcript"
+            
     except Exception as e:
         print(f"Error transcript: {e}")
         return "no transcript"
