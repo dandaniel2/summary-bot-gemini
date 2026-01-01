@@ -12,29 +12,26 @@
             color: var(--tg-theme-text-color, #000);
             display: flex;
             flex-direction: column;
-            padding: 20px;
+            padding: 16px;
             margin: 0;
             height: 100vh;
             box-sizing: border-box;
-            
             user-select: none;
-            -webkit-user-select: none;
         }
 
-        h3 {
-            margin-top: 0;
+        h3 { margin: 0 0 10px 0; font-size: 18px;}
+        p { color: var(--tg-theme-hint-color, #999); font-size: 14px; margin-bottom: 10px; }
+
+        .input-container {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
             margin-bottom: 10px;
-        }
-
-        p {
-            color: var(--tg-theme-hint-color, #999);
-            font-size: 14px;
-            margin-bottom: 15px;
         }
 
         textarea {
             width: 100%;
-            flex-grow: 1;
+            height: 100%;
             padding: 12px;
             border-radius: 12px;
             border: 1px solid var(--tg-theme-hint-color, #ccc);
@@ -44,45 +41,115 @@
             resize: none;
             box-sizing: border-box;
             outline: none;
-
             user-select: text !important;
             -webkit-user-select: text !important;
-            
-            -webkit-touch-callout: default !important;
         }
 
         textarea:focus {
             border-color: var(--tg-theme-button-color, #3390ec);
         }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.2s;
+        }
+
+        .btn:active { opacity: 0.7; }
+
+        .btn-paste {
+            background-color: var(--tg-theme-secondary-bg-color, #e0e0e0);
+            color: var(--tg-theme-text-color, #000);
+        }
+
+        .btn-send {
+            background-color: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #fff);
+            flex-grow: 1;
+            font-size: 16px;
+            padding: 14px;
+        }
     </style>
 </head>
 <body>
-    <h3>Ввод текста</h3>
-    <p>Вставьте ссылку или длинный текст для анализа:</p>
+    <h3>AI Summary</h3>
     
-    <textarea id="inputText" placeholder="Нажмите и удерживайте здесь, чтобы вставить текст..."></textarea>
+    <div class="buttons-row">
+        <button class="btn btn-paste" onclick="pasteFromClipboard()">
+            📋 Вставить
+        </button>
+    </div>
+
+    <div class="input-container">
+        <textarea id="inputText" placeholder="Введите текст или ссылку..."></textarea>
+    </div>
+
+    <button class="btn btn-send" onclick="sendDataToBot()">
+        Отправить боту
+    </button>
     
     <script>
         const tg = window.Telegram.WebApp;
-        
         tg.ready();
-        tg.expand(); 
+        tg.expand();
 
-        tg.MainButton.setText("Отправить боту");
+        tg.MainButton.setText("Отправить");
         tg.MainButton.show();
+        tg.MainButton.onClick(sendDataToBot);
 
-        tg.MainButton.onClick(function() {
-            const data = document.getElementById("inputText").value;
+        function sendDataToBot() {
+            const textarea = document.getElementById("inputText");
+            const data = textarea.value;
+
+            textarea.blur();
+
             if (data.trim() === "") {
                 tg.HapticFeedback.notificationOccurred('error');
-                tg.showAlert("Поле пустое!");
+                tg.showAlert("Введите текст перед отправкой!");
                 return;
             }
-            tg.HapticFeedback.notificationOccurred('success');
-            tg.sendData(data);
-        });
 
-        document.getElementById("inputText").focus();
+            try {
+                tg.HapticFeedback.notificationOccurred('success');
+                tg.sendData(data);
+                // setTimeout(() => tg.close(), 100); 
+            } catch (e) {
+                tg.showAlert("Ошибка отправки: " + e.message);
+            }
+        }
+
+        function pasteFromClipboard() {
+            const textarea = document.getElementById("inputText");
+            textarea.focus();
+            
+            if (tg.readTextFromClipboard) {
+                tg.readTextFromClipboard((clipText) => {
+                    if (clipText) {
+                        textarea.value = clipText;
+                        tg.HapticFeedback.notificationOccurred('selection');
+                    } else {
+                        tg.showAlert("Буфер пуст или нет доступа. Используйте долгое нажатие.");
+                    }
+                });
+            } else {
+                navigator.clipboard.readText()
+                    .then(text => { textarea.value = text; })
+                    .catch(() => tg.showAlert("Нажмите долго на поле -> Вставить"));
+            }
+        }
     </script>
 </body>
 </html>
