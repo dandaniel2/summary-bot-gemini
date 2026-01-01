@@ -310,7 +310,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         file_bytes = await new_file.download_as_bytearray()
         loop = asyncio.get_running_loop()
         summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
-        await update.message.reply_text(f"🤖 **Результат:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
+        await update.message.reply_text(f"🤖 Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Media Error: {e}")
         await update.message.reply_text(f"Ошибка: {e}")
