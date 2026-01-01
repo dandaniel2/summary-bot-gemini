@@ -46,7 +46,7 @@ def scrape_text_from_url(url):
 async def search_results(keywords):
     try:
         with DDGS() as ddgs:
-            results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3)]
+            results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend='html')]
         return results
     except Exception as e:
         print(f"DDG Error: {e}")
@@ -99,7 +99,6 @@ def summarize(text_array):
 # --- ЛОГИКА ГЕНЕРАЦИИ (МЕДИА) ---
 
 def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
-    """Универсальная функция для аудио и картинок"""
     if not client: return "API Key Error"
     
     system_instruction = f"You are an expert analyst. Analyze the provided media. Respond in {lang}."
@@ -185,7 +184,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
            "📄 PDF документы\n"
            "🖼 **Фотографии (OCR)**\n"
            "🎤 **Голосовые и Аудио**\n\n"
-           "Просто отправь мне файл через скрепку 📎 или напиши текст!")
+           "Просто отправь мне файл через скрепку 📎, надиктуй сообщение или пришли ссылку!")
     
     if WEBAPP_URL:
         kb = [[KeyboardButton(text="📱 Ввод текста (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))]]
@@ -319,10 +318,18 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         for garbage in ["📱 **Результат из Web App:**", "🤖 **Результат:**", "📝 **PDF Summary:**", "🎤 **Саммари аудио:**"]:
             clean_text = clean_text.replace(garbage, "")
         
-        prompt = f"{clean_text}\nGive 3 search keywords."
+        prompt = (
+            f"{clean_text}\n"
+            "Based on the text above, generate a SINGLE search query string for DuckDuckGo to find similar info. "
+            "Return ONLY the keywords separated by spaces. "
+            "NO numbering (1. 2.), NO intro text, NO markdown (**bold**), NO quotes."
+        )
+        
         keywords = call_gemini_api(prompt)
+        keywords = keywords.replace('"', '').strip()
+        
         results = await search_results(keywords)
-        links = "\n".join([f"{r['title']} - {r['href']}" for r in results]) if results else "Ничего не найдено"
+        links = "\n".join([f"{r['title']} - {r['href']}" for r in results]) if results else "Ничего не найдено (попробуйте позже)"
         await query.message.reply_text(links)
 
 def process_user_input(user_input):
