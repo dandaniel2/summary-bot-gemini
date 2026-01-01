@@ -29,6 +29,32 @@ if google_api_key:
 
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
+def print_available_models():
+    if not client:
+        print("⚠️ Google Client not initialized (API Key missing).")
+        return
+
+    print("\n" + "="*40)
+    print("🔍 CHECKING AVAILABLE MODELS (Gemini & Gemma)...")
+    print("="*40)
+    
+    try:
+        count = 0
+        for m in client.models.list():
+            name = m.name.lower()
+            if ("gemini" in name or "gemma" in name) and "vision" not in name:
+                print(f" • {m.name}")
+                count += 1
+        
+        print("-" * 40)
+        print(f"✅ Total models found: {count}")
+        print(f"👉 Current selected model: {model_name}")
+        print("="*40 + "\n")
+        
+    except Exception as e:
+        print(f"❌ Error listing models: {e}")
+        print("="*40 + "\n")
+
 def split_user_input(text):
     paragraphs = text.split('\n')
     paragraphs = [paragraph.strip() for paragraph in paragraphs if paragraph.strip()]
@@ -47,22 +73,18 @@ def scrape_text_from_url(url):
 # --- ФУНКЦИЯ ПОИСКА (DDG + Link Fallback) ---
 async def search_results(keywords):
     backends = ['lite', 'html', 'api']
-    
     for backend in backends:
         try:
             await asyncio.sleep(1)
             with DDGS() as ddgs:
                 results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend=backend)]
-                if results:
-                    return results
+                if results: return results
         except Exception as e:
             print(f"DDG Backend '{backend}' failed: {e}")
             continue 
-            
     return []
 
 # --- ЛОГИКА ГЕНЕРАЦИИ (ТЕКСТ) ---
-
 def summarize(text_array):
     def create_chunks(paragraphs):
         chunks = []
@@ -106,30 +128,18 @@ def summarize(text_array):
         return f"Error: {e}"
 
 # --- ЛОГИКА ГЕНЕРАЦИИ (МЕДИА) ---
-
 def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     if not client: return "API Key Error"
-    
     system_instruction = f"You are an expert analyst. Analyze the provided media. Respond in {lang}."
-    
     try:
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.3
-        )
-        
+        config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
         response = client.models.generate_content(
             model=model_name,
-            contents=[
-                types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                prompt_text
-            ],
+            contents=[types.Part.from_bytes(data=file_bytes, mime_type=mime_type), prompt_text],
             config=config
         )
-        
         if response.text: return response.text.strip()
         return "Модель вернула пустой ответ."
-        
     except Exception as e:
         if "429" in str(e): return "Превышены лимиты API (429)."
         print(f"Media Error: {e}")
@@ -147,14 +157,9 @@ def call_gemini_with_retry(prompt, system_instruction, retries=3):
 def call_gemini_api(prompt, system_instruction=None):
     if not client: return "API Key Error"
     try:
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.3
-        )
+        config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
         response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config=config
+            model=model_name, contents=prompt, config=config
         )
         if response.text: return response.text.strip()
         return ""
@@ -164,7 +169,6 @@ def call_gemini_api(prompt, system_instruction=None):
         return ""
 
 # --- YOUTUBE ---
-
 def extract_youtube_transcript(youtube_url):
     try:
         video_id_match = re.search(r"(?<=v=)[^&]+|(?<=youtu.be/)[^?|\n]+", youtube_url)
@@ -184,7 +188,6 @@ def retrieve_yt_transcript_from_url(youtube_url):
     return [output]
 
 # --- ОБРАБОТЧИКИ TELEGRAM ---
-
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (f"👋 Привет! Я использую модель {model_name}.\n\n"
            "**Я умею анализировать:**\n"
@@ -319,7 +322,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         prompt = (
             f"{clean_text}\n"
-            "Based on the text above, generate a SINGLE search query string for Google/DuckDuckGo to find similar info. "
+            "Based on the text above, generate a SINGLE search query string for DuckDuckGo to find similar info. "
             "Return ONLY the keywords separated by spaces. "
             "NO numbering, NO quotes."
         )
@@ -335,11 +338,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             encoded_query = urllib.parse.quote(keywords)
             fallback_text = (
-                f"⚠️ **Автоматический поиск недоступен.**\n"
-                f"DuckDuckGo временно заблокировал IP бота.\n\n"
-                f"🔎 **Но вы можете найти это сами:**\n"
-                f"👉 [Искать в Google](https://www.google.com/search?q={encoded_query})\n"
-                f"👉 [Искать в DuckDuckGo](https://duckduckgo.com/?q={encoded_query})"
+                f"⚠️ **Авто-поиск недоступен.**\n"
+                f"🔎 **Искать вручную:**\n"
+                f"👉 [Google](https://www.google.com/search?q={encoded_query})\n"
+                f"👉 [DuckDuckGo](https://duckduckgo.com/?q={encoded_query})"
             )
             await query.message.reply_text(fallback_text, parse_mode="Markdown")
 
@@ -354,6 +356,8 @@ def get_inline_keyboard_buttons():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Explore Similar", callback_data="explore_similar")]])
 
 def main():
+    print_available_models()
+    
     app = ApplicationBuilder().token(telegram_token).build()
     
     app.add_handler(CommandHandler('start', handle_start))
