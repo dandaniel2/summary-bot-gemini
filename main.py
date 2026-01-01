@@ -44,13 +44,13 @@ def scrape_text_from_url(url):
         print(f"Error scraping: {e}")
         return []
 
+# --- ФУНКЦИЯ ПОИСКА (DDG + Link Fallback) ---
 async def search_results(keywords):
     backends = ['lite', 'html', 'api']
     
     for backend in backends:
         try:
             await asyncio.sleep(1)
-            
             with DDGS() as ddgs:
                 results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend=backend)]
                 if results:
@@ -58,8 +58,7 @@ async def search_results(keywords):
         except Exception as e:
             print(f"DDG Backend '{backend}' failed: {e}")
             continue 
-                
-    print("All DDG backends failed (IP Ratelimited).")
+            
     return []
 
 # --- ЛОГИКА ГЕНЕРАЦИИ (ТЕКСТ) ---
@@ -234,14 +233,12 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         prompt = "Describe this image and summarize any text in it."
         action = "UPLOAD_PHOTO"
         await update.message.reply_text("🖼 Вижу картинку, анализирую...")
-    
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
         prompt = "Listen and summarize."
         action = "UPLOAD_VOICE"
         await update.message.reply_text("🎤 Слушаю голосовое...")
-
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
@@ -260,10 +257,8 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     try:
         new_file = await context.bot.get_file(file_obj.file_id)
         file_bytes = await new_file.download_as_bytearray()
-        
         loop = asyncio.get_running_loop()
         summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
-        
         await update.message.reply_text(f"🤖 **Результат:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
     except Exception as e:
         print(f"Media Handler Error: {e}")
@@ -276,19 +271,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if doc.mime_type == 'application/pdf':
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
         await update.message.reply_text("📄 Читаю PDF...")
-        
         file_path = f"/tmp/{doc.file_unique_id}.pdf"
-        
         try:
             file = await context.bot.get_file(doc)
             await file.download_to_drive(file_path)
-            
             text_array = []
             reader = PdfReader(file_path)
             for page in reader.pages:
                 t = page.extract_text()
                 if t: text_array.append(t)
-            
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, summarize, text_array)
             await update.message.reply_text(f"📝 **PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
@@ -297,7 +288,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Ошибка чтения PDF: {e}")
         finally:
             if os.path.exists(file_path): os.remove(file_path)
-    
     elif "image" in doc.mime_type or "audio" in doc.mime_type:
          await update.message.reply_text("Пожалуйста, отправьте это как Фото (с сжатием) или Аудио, а не как Файл.")
     else:
@@ -310,7 +300,6 @@ async def process_request(user_input, chat_id, update, context, from_webapp=Fals
             msg = "Не удалось распознать ссылку или текст пустой."
             await context.bot.send_message(chat_id=chat_id, text=msg)
             return
-
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
         loop = asyncio.get_running_loop()
         summary = await loop.run_in_executor(None, summarize, text_array)
@@ -330,9 +319,9 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         prompt = (
             f"{clean_text}\n"
-            "Based on the text above, generate a SINGLE search query string for DuckDuckGo to find similar info. "
+            "Based on the text above, generate a SINGLE search query string for Google/DuckDuckGo to find similar info. "
             "Return ONLY the keywords separated by spaces. "
-            "NO numbering (1. 2.), NO intro text, NO markdown (**bold**), NO quotes."
+            "NO numbering, NO quotes."
         )
         
         keywords = call_gemini_api(prompt)
@@ -346,9 +335,10 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             encoded_query = urllib.parse.quote(keywords)
             fallback_text = (
-                f"🔎 **Не удалось загрузить превью (лимит запросов).**\n\n"
-                f"Но вы можете найти это вручную:\n"
-                f"👉 [Искать в Google: {keywords}](https://www.google.com/search?q={encoded_query})\n"
+                f"⚠️ **Автоматический поиск недоступен.**\n"
+                f"DuckDuckGo временно заблокировал IP бота.\n\n"
+                f"🔎 **Но вы можете найти это сами:**\n"
+                f"👉 [Искать в Google](https://www.google.com/search?q={encoded_query})\n"
                 f"👉 [Искать в DuckDuckGo](https://duckduckgo.com/?q={encoded_query})"
             )
             await query.message.reply_text(fallback_text, parse_mode="Markdown")
