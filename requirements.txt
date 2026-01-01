@@ -10,9 +10,6 @@ google-genai>=0.3.0
 # text extraction
 trafilatura>=1.9.0
 
-# FIX: Pinning version to keep AsyncDDGS working
-duckduckgo_search==6.4.2
-
 # PDFs
 PyPDF2==3.0.1
 
@@ -21,3 +18,5 @@ python-telegram-bot==21.1.1
 
 # YouTube
 youtube_transcript_api==0.6.2
+
+requests

@@ -3,10 +3,10 @@ import os
 import re
 import time
 import urllib.parse
+import requests
 import trafilatura
 from google import genai
 from google.genai import types
-from duckduckgo_search import DDGS
 from PyPDF2 import PdfReader
 from tqdm import tqdm
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, WebAppInfo, Update
@@ -15,13 +15,13 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 # --- КОНФИГУРАЦИЯ ---
 telegram_token = os.environ.get("TELEGRAM_TOKEN", "xxx")
-model_name = os.environ.get("LLM_MODEL", "gemini-flash-lite-latest")
+model_name = os.environ.get("LLM_MODEL", "gemini-flash-latest") 
 lang = os.environ.get("TS_LANG", "Russian")
-ddg_region = os.environ.get("DDG_REGION", "wt-wt")
 chunk_size = int(os.environ.get("CHUNK_SIZE", 100000))
 allowed_users = os.environ.get("ALLOWED_USERS", "")
 google_api_key = os.environ.get("GOOGLE_API_KEY", "")
-WEBAPP_URL = os.environ.get("WEBAPP_URL", "") 
+google_cse_id = os.environ.get("GOOGLE_CSE_ID", "")
+webapp_url = os.environ.get("WEBAPP_URL", "") 
 
 client = None
 if google_api_key:
@@ -30,30 +30,17 @@ if google_api_key:
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
 
 def print_available_models():
-    if not client:
-        print("⚠️ Google Client not initialized (API Key missing).")
-        return
-
-    print("\n" + "="*40)
-    print("🔍 CHECKING AVAILABLE MODELS (Gemini & Gemma)...")
-    print("="*40)
-    
+    if not client: return
+    print("\n🔍 CHECKING AVAILABLE MODELS...")
     try:
         count = 0
         for m in client.models.list():
-            name = m.name.lower()
-            if ("gemini" in name or "gemma" in name) and "vision" not in name:
+            if ("gemini" in m.name or "gemma" in m.name) and "vision" not in m.name:
                 print(f" • {m.name}")
                 count += 1
-        
-        print("-" * 40)
-        print(f"✅ Total models found: {count}")
-        print(f"👉 Current selected model: {model_name}")
-        print("="*40 + "\n")
-        
+        print(f"✅ Total: {count}\n👉 Selected: {model_name}\n")
     except Exception as e:
         print(f"❌ Error listing models: {e}")
-        print("="*40 + "\n")
 
 def split_user_input(text):
     paragraphs = text.split('\n')
@@ -70,21 +57,47 @@ def scrape_text_from_url(url):
         print(f"Error scraping: {e}")
         return []
 
-# --- ФУНКЦИЯ ПОИСКА (DDG + Link Fallback) ---
+# --- ПОИСК ЧЕРЕЗ GOOGLE API (Вместо DDG) ---
 async def search_results(keywords):
-    backends = ['lite', 'html', 'api']
-    for backend in backends:
-        try:
-            await asyncio.sleep(1)
-            with DDGS() as ddgs:
-                results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend=backend)]
-                if results: return results
-        except Exception as e:
-            print(f"DDG Backend '{backend}' failed: {e}")
-            continue 
-    return []
+    if not google_cse_id:
+        print("❌ Ошибка: Не задан GOOGLE_CSE_ID")
+        return []
+    
+    print(f"🔎 Google Searching: {keywords}")
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        'key': google_api_key,
+        'cx': google_cse_id,
+        'q': keywords,
+        'num': 3
+    }
+    
+    try:
+        loop = asyncio.get_running_loop()
+        response = await loop.run_in_executor(None, lambda: requests.get(url, params=params))
+        
+        data = response.json()
+        
+        if 'error' in data:
+            err_msg = data['error']['message']
+            print(f"⚠️ Google API Error: {err_msg}")
+            return []
+            
+        results = []
+        if 'items' in data:
+            for item in data['items']:
+                results.append({
+                    'title': item.get('title'),
+                    'href': item.get('link')
+                })
+        return results
+        
+    except Exception as e:
+        print(f"Search Request Failed: {e}")
+        return []
 
-# --- ЛОГИКА ГЕНЕРАЦИИ (ТЕКСТ) ---
+# --- ГЕНЕРАЦИЯ ---
+
 def summarize(text_array):
     def create_chunks(paragraphs):
         chunks = []
@@ -109,14 +122,14 @@ def summarize(text_array):
         summaries = []
         system_instruction = f"You are an expert summarizer. Respond in {lang}. Do not translate technical terms."
 
-        for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing Text")):
+        for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
             prompt = f"Summarize this:\n{chunk}"
             result = call_gemini_with_retry(prompt, system_instruction)
             if result: summaries.append(result)
             if i < len(text_chunks) - 1: time.sleep(2)
 
-        if not summaries: return "Ошибка: пустой ответ от модели."
+        if not summaries: return "Ошибка: пустой ответ."
         if len(summaries) == 1: return summaries[0]
         
         summary = ' '.join(summaries)
@@ -127,7 +140,6 @@ def summarize(text_array):
         print(f"Summarize Error: {e}")
         return f"Error: {e}"
 
-# --- ЛОГИКА ГЕНЕРАЦИИ (МЕДИА) ---
 def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     if not client: return "API Key Error"
     system_instruction = f"You are an expert analyst. Analyze the provided media. Respond in {lang}."
@@ -168,7 +180,8 @@ def call_gemini_api(prompt, system_instruction=None):
         print(f"Gemini API Error: {e}")
         return ""
 
-# --- YOUTUBE ---
+# --- YOUTUBE & FILES ---
+
 def extract_youtube_transcript(youtube_url):
     try:
         video_id_match = re.search(r"(?<=v=)[^&]+|(?<=youtu.be/)[^?|\n]+", youtube_url)
@@ -187,19 +200,14 @@ def retrieve_yt_transcript_from_url(youtube_url):
     if output == 'no transcript': raise ValueError("No transcript found.")
     return [output]
 
-# --- ОБРАБОТЧИКИ TELEGRAM ---
+# --- HANDLERS ---
+
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (f"👋 Привет! Я использую модель {model_name}.\n\n"
-           "**Я умею анализировать:**\n"
-           "📝 Текст и ссылки\n"
-           "📺 YouTube видео\n"
-           "📄 PDF документы\n"
-           "🖼 **Фотографии (OCR)**\n"
-           "🎤 **Голосовые и Аудио**\n\n"
-           "Просто отправь мне файл через скрепку 📎, надиктуй сообщение или пришли ссылку!")
-    
-    if WEBAPP_URL:
-        kb = [[KeyboardButton(text="📱 Ввод текста (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))]]
+           "**Я умею анализировать:**\n📝 Текст и ссылки\n📺 YouTube\n📄 PDF\n🖼 Фото\n🎤 Аудио\n\n"
+           "Кидай что угодно!")
+    if webapp_url:
+        kb = [[KeyboardButton(text="📱 Ввод текста (Mini App)", web_app=WebAppInfo(url=webapp_url))]]
         markup = ReplyKeyboardMarkup(kb, resize_keyboard=True)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
     else:
@@ -223,7 +231,6 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if allowed_users and str(chat_id) not in allowed_users.split(','):
         await update.message.reply_text("Access denied.")
         return
-
     message = update.message
     file_obj = None
     mime_type = ""
@@ -233,30 +240,28 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if message.photo:
         file_obj = message.photo[-1]
         mime_type = "image/jpeg"
-        prompt = "Describe this image and summarize any text in it."
+        prompt = "Describe this image and summarize text."
         action = "UPLOAD_PHOTO"
-        await update.message.reply_text("🖼 Вижу картинку, анализирую...")
+        await update.message.reply_text("🖼 Анализирую фото...")
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
         prompt = "Listen and summarize."
         action = "UPLOAD_VOICE"
-        await update.message.reply_text("🎤 Слушаю голосовое...")
+        await update.message.reply_text("🎤 Слушаю...")
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
         prompt = "Listen and summarize."
         action = "UPLOAD_VOICE"
-        await update.message.reply_text("🎧 Анализирую аудиофайл...")
+        await update.message.reply_text("🎧 Анализирую аудио...")
 
     if not file_obj: return
-
     if file_obj.file_size > 20 * 1024 * 1024:
-        await update.message.reply_text("⚠️ Файл слишком большой (>20MB).")
+        await update.message.reply_text("⚠️ Файл >20MB.")
         return
 
     await context.bot.send_chat_action(chat_id=chat_id, action=action)
-
     try:
         new_file = await context.bot.get_file(file_obj.file_id)
         file_bytes = await new_file.download_as_bytearray()
@@ -264,13 +269,12 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
         await update.message.reply_text(f"🤖 **Результат:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
     except Exception as e:
-        print(f"Media Handler Error: {e}")
+        print(f"Media Error: {e}")
         await update.message.reply_text(f"Ошибка: {e}")
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     doc = update.message.document
-    
     if doc.mime_type == 'application/pdf':
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
         await update.message.reply_text("📄 Читаю PDF...")
@@ -288,19 +292,19 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"📝 **PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
         except Exception as e:
             print(f"PDF Error: {e}")
-            await update.message.reply_text(f"Ошибка чтения PDF: {e}")
+            await update.message.reply_text(f"Ошибка PDF: {e}")
         finally:
             if os.path.exists(file_path): os.remove(file_path)
     elif "image" in doc.mime_type or "audio" in doc.mime_type:
-         await update.message.reply_text("Пожалуйста, отправьте это как Фото (с сжатием) или Аудио, а не как Файл.")
+         await update.message.reply_text("Отправьте как Фото/Аудио, а не как Файл.")
     else:
-        await update.message.reply_text(f"Я пока не умею читать файлы типа {doc.mime_type}, только PDF.")
+        await update.message.reply_text(f"Не поддерживаю {doc.mime_type}.")
 
 async def process_request(user_input, chat_id, update, context, from_webapp=False):
     try:
         text_array = process_user_input(user_input)
         if not text_array:
-            msg = "Не удалось распознать ссылку или текст пустой."
+            msg = "Пустой ввод."
             await context.bot.send_message(chat_id=chat_id, text=msg)
             return
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
@@ -320,15 +324,11 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         for garbage in ["📱 **Результат из Web App:**", "🤖 **Результат:**", "📝 **PDF Summary:**", "🎤 **Саммари аудио:**"]:
             clean_text = clean_text.replace(garbage, "")
         
-        prompt = (
-            f"{clean_text}\n"
-            "Based on the text above, generate a SINGLE search query string for DuckDuckGo to find similar info. "
-            "Return ONLY the keywords separated by spaces. "
-            "NO numbering, NO quotes."
-        )
+        prompt = (f"{clean_text}\n"
+                  "Generate a SINGLE search query string for Google. "
+                  "Return ONLY the keywords separated by spaces. NO quotes.")
         
-        keywords = call_gemini_api(prompt)
-        keywords = keywords.replace('"', '').strip()
+        keywords = call_gemini_api(prompt).replace('"', '').strip()
         
         results = await search_results(keywords)
         
@@ -336,14 +336,11 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
             links = "\n".join([f"{r['title']} - {r['href']}" for r in results])
             await query.message.reply_text(links, disable_web_page_preview=True)
         else:
-            encoded_query = urllib.parse.quote(keywords)
-            fallback_text = (
-                f"⚠️ **Авто-поиск недоступен.**\n"
-                f"🔎 **Искать вручную:**\n"
-                f"👉 [Google](https://www.google.com/search?q={encoded_query})\n"
-                f"👉 [DuckDuckGo](https://duckduckgo.com/?q={encoded_query})"
+            encoded = urllib.parse.quote(keywords)
+            await query.message.reply_text(
+                f"🔎 **Авто-поиск недоступен.**\n👉 [Google: {keywords}](https://www.google.com/search?q={encoded})",
+                parse_mode="Markdown"
             )
-            await query.message.reply_text(fallback_text, parse_mode="Markdown")
 
 def process_user_input(user_input):
     if re.match(r"https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", user_input):
@@ -357,16 +354,13 @@ def get_inline_keyboard_buttons():
 
 def main():
     print_available_models()
-    
     app = ApplicationBuilder().token(telegram_token).build()
-    
     app.add_handler(CommandHandler('start', handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summarize))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO, handle_media_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(handle_button_click))
-    
     print("Bot is polling...")
     app.run_polling()
 
