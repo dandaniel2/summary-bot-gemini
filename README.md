@@ -24,8 +24,8 @@ Since this is a custom version, you need to build the Docker image yourself.
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
-cd YOUR_REPO_NAME
+git clone https://github.com/dandaniel2/summary-bot-gemini.git
+cd summary-bot-gemini
 ```
 
 ### 2. Build the Docker Image
