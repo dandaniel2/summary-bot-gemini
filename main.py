@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import time
+import urllib.parse
 import trafilatura
 from google import genai
 from google.genai import types
@@ -46,18 +47,19 @@ def scrape_text_from_url(url):
 async def search_results(keywords):
     backends = ['lite', 'html', 'api']
     
-    with DDGS() as ddgs:
-        for backend in backends:
-            try:
-                await asyncio.sleep(0.5)
+    for backend in backends:
+        try:
+            await asyncio.sleep(1)
+            
+            with DDGS() as ddgs:
                 results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend=backend)]
                 if results:
                     return results
-            except Exception as e:
-                print(f"DDG Backend '{backend}' failed: {e}")
-                continue
+        except Exception as e:
+            print(f"DDG Backend '{backend}' failed: {e}")
+            continue 
                 
-    print("All DDG backends failed.")
+    print("All DDG backends failed (IP Ratelimited).")
     return []
 
 # --- ЛОГИКА ГЕНЕРАЦИИ (ТЕКСТ) ---
@@ -250,7 +252,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if not file_obj: return
 
     if file_obj.file_size > 20 * 1024 * 1024:
-        await update.message.reply_text("⚠️ Файл слишком большой (>20MB). Telegram API не позволяет его скачать.")
+        await update.message.reply_text("⚠️ Файл слишком большой (>20MB).")
         return
 
     await context.bot.send_chat_action(chat_id=chat_id, action=action)
@@ -337,8 +339,19 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         keywords = keywords.replace('"', '').strip()
         
         results = await search_results(keywords)
-        links = "\n".join([f"{r['title']} - {r['href']}" for r in results]) if results else "Ничего не найдено (или превышен лимит поиска)"
-        await query.message.reply_text(links)
+        
+        if results:
+            links = "\n".join([f"{r['title']} - {r['href']}" for r in results])
+            await query.message.reply_text(links, disable_web_page_preview=True)
+        else:
+            encoded_query = urllib.parse.quote(keywords)
+            fallback_text = (
+                f"🔎 **Не удалось загрузить превью (лимит запросов).**\n\n"
+                f"Но вы можете найти это вручную:\n"
+                f"👉 [Искать в Google: {keywords}](https://www.google.com/search?q={encoded_query})\n"
+                f"👉 [Искать в DuckDuckGo](https://duckduckgo.com/?q={encoded_query})"
+            )
+            await query.message.reply_text(fallback_text, parse_mode="Markdown")
 
 def process_user_input(user_input):
     if re.match(r"https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", user_input):
