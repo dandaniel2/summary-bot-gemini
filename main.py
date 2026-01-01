@@ -20,32 +20,18 @@ ddg_region = os.environ.get("DDG_REGION", "wt-wt")
 chunk_size = int(os.environ.get("CHUNK_SIZE", 100000))
 allowed_users = os.environ.get("ALLOWED_USERS", "")
 google_api_key = os.environ.get("GOOGLE_API_KEY", "")
-WEBAPP_URL = os.environ.get("WEBAPP_URL", "")
+WEBAPP_URL = os.environ.get("WEBAPP_URL", "") 
 
 client = None
 if google_api_key:
     client = genai.Client(api_key=google_api_key)
 
-
 # --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
-
-def list_available_models():
-    if not client: return
-    print("--- Checking available Gemini models ---")
-    try:
-        for m in client.models.list():
-            if "flash" in m.name:
-                print(f"Found: {m.name}")
-    except Exception as e:
-        print(f"Error listing models: {e}")
-    print("----------------------------------------")
-
 
 def split_user_input(text):
     paragraphs = text.split('\n')
     paragraphs = [paragraph.strip() for paragraph in paragraphs if paragraph.strip()]
     return paragraphs
-
 
 def scrape_text_from_url(url):
     try:
@@ -57,7 +43,6 @@ def scrape_text_from_url(url):
         print(f"Error scraping: {e}")
         return []
 
-
 async def search_results(keywords):
     try:
         with DDGS() as ddgs:
@@ -67,8 +52,7 @@ async def search_results(keywords):
         print(f"DDG Error: {e}")
         return []
 
-
-# --- ЛОГИКА САММАРИЗАЦИИ ТЕКСТА ---
+# --- ЛОГИКА ГЕНЕРАЦИИ (ТЕКСТ) ---
 
 def summarize(text_array):
     def create_chunks(paragraphs):
@@ -80,8 +64,7 @@ def summarize(text_array):
             else:
                 chunks.append(chunk.strip())
                 chunk = paragraph + ' '
-        if chunk:
-            chunks.append(chunk.strip())
+        if chunk: chunks.append(chunk.strip())
         return chunks
 
     try:
@@ -89,74 +72,60 @@ def summarize(text_array):
             text_chunks = text_array
         else:
             flat_text = "\n".join(text_array)
-            if len(flat_text) < chunk_size:
-                text_chunks = [flat_text]
-            else:
-                text_chunks = create_chunks(text_array)
+            if len(flat_text) < chunk_size: text_chunks = [flat_text]
+            else: text_chunks = create_chunks(text_array)
 
         summaries = []
-        system_instruction = (
-            "You are an expert in creating summaries. "
-            f"Respond in {lang}. Do not translate technical terms."
-        )
+        system_instruction = f"You are an expert summarizer. Respond in {lang}. Do not translate technical terms."
 
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing Text")):
             if not chunk.strip(): continue
-            prompt = f"Summarize this section:\n{chunk}"
+            prompt = f"Summarize this:\n{chunk}"
             result = call_gemini_with_retry(prompt, system_instruction)
             if result: summaries.append(result)
             if i < len(text_chunks) - 1: time.sleep(2)
 
-        if not summaries: return "Ошибка получения ответа."
+        if not summaries: return "Ошибка: пустой ответ от модели."
         if len(summaries) == 1: return summaries[0]
-
+        
         summary = ' '.join(summaries)
-        final_prompt = f"Combine these points into a final bulleted summary in {lang}:\n{summary}"
+        final_prompt = f"Combine these points into a final summary in {lang}:\n{summary}"
         return call_gemini_with_retry(final_prompt, system_instruction)
 
     except Exception as e:
-        print(f"Error in summarize: {e}")
+        print(f"Summarize Error: {e}")
         return f"Error: {e}"
 
+# --- ЛОГИКА ГЕНЕРАЦИИ (МЕДИА) ---
 
-# --- АУДИО ---
-
-def summarize_audio(file_bytes, mime_type):
-    """Отправляет аудио напрямую в Gemini"""
+def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
+    """Универсальная функция для аудио и картинок"""
     if not client: return "API Key Error"
-
-    system_instruction = (
-        "You are an expert listener and summarizer. "
-        "Listen to the audio and create a concise bulleted summary of the key points. "
-        f"Respond in {lang}."
-    )
-
+    
+    system_instruction = f"You are an expert analyst. Analyze the provided media. Respond in {lang}."
+    
     try:
-        prompt = "Summarize this audio."
-
         config = types.GenerateContentConfig(
             system_instruction=system_instruction,
             temperature=0.3
         )
-
+        
         response = client.models.generate_content(
             model=model_name,
             contents=[
                 types.Part.from_bytes(data=file_bytes, mime_type=mime_type),
-                prompt
+                prompt_text
             ],
             config=config
         )
-
-        if response.text:
-            return response.text.strip()
+        
+        if response.text: return response.text.strip()
         return "Модель вернула пустой ответ."
-
+        
     except Exception as e:
         if "429" in str(e): return "Превышены лимиты API (429)."
-        print(f"Audio Error: {e}")
-        return f"Ошибка обработки аудио: {e}"
-
+        print(f"Media Error: {e}")
+        return f"Ошибка обработки медиа: {e}"
 
 def call_gemini_with_retry(prompt, system_instruction, retries=3):
     for attempt in range(retries):
@@ -166,7 +135,6 @@ def call_gemini_with_retry(prompt, system_instruction, retries=3):
             continue
         return res
     return "Error: Quota exceeded."
-
 
 def call_gemini_api(prompt, system_instruction=None):
     if not client: return "API Key Error"
@@ -187,8 +155,8 @@ def call_gemini_api(prompt, system_instruction=None):
         print(f"Gemini API Error: {e}")
         return ""
 
+# --- YOUTUBE ---
 
-# --- YOUTUBE И PDF ---
 def extract_youtube_transcript(youtube_url):
     try:
         video_id_match = re.search(r"(?<=v=)[^&]+|(?<=youtu.be/)[^?|\n]+", youtube_url)
@@ -202,24 +170,29 @@ def extract_youtube_transcript(youtube_url):
         print(f"Error transcript: {e}")
         return "no transcript"
 
-
 def retrieve_yt_transcript_from_url(youtube_url):
     output = extract_youtube_transcript(youtube_url)
     if output == 'no transcript': raise ValueError("No transcript found.")
     return [output]
 
-
 # --- ОБРАБОТЧИКИ TELEGRAM ---
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = f"Привет! Я использую модель {model_name}.\n\nЯ умею работать с:\n📝 Текстом и ссылками\n📺 YouTube видео\n📄 PDF документами\n🎤 **Голосовыми сообщениями**\n🎵 **Аудиофайлами (MP3, WAV, M4A)**"
+    msg = (f"👋 Привет! Я использую модель {model_name}.\n\n"
+           "**Я умею анализировать:**\n"
+           "📝 Текст и ссылки\n"
+           "📺 YouTube видео\n"
+           "📄 PDF документы\n"
+           "🖼 **Фотографии (OCR)**\n"
+           "🎤 **Голосовые и Аудио**\n\n"
+           "Просто отправь мне файл через скрепку 📎 или напиши текст!")
+    
     if WEBAPP_URL:
-        kb = [[KeyboardButton(text="📱 Открыть Mini App", web_app=WebAppInfo(url=WEBAPP_URL))]]
+        kb = [[KeyboardButton(text="📱 Ввод текста (Mini App)", web_app=WebAppInfo(url=WEBAPP_URL))]]
         markup = ReplyKeyboardMarkup(kb, resize_keyboard=True)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
     else:
         await update.message.reply_text(msg, parse_mode="Markdown")
-
 
 async def handle_summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -228,57 +201,98 @@ async def handle_summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await process_request(update.message.text, chat_id, update, context)
 
-
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if allowed_users and str(chat_id) not in allowed_users.split(','): return
     data = update.effective_message.web_app_data.data
     await process_request(data, chat_id, update, context, from_webapp=True)
 
-
-async def handle_audio_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if allowed_users and str(chat_id) not in allowed_users.split(','):
         await update.message.reply_text("Access denied.")
         return
 
     message = update.message
+    file_obj = None
+    mime_type = ""
+    prompt = "Summarize this."
+    action = "TYPING"
 
-    if message.voice:
+    if message.photo:
+        file_obj = message.photo[-1]
+        mime_type = "image/jpeg"
+        prompt = "Describe this image and summarize any text in it."
+        action = "UPLOAD_PHOTO"
+        await update.message.reply_text("🖼 Вижу картинку, анализирую...")
+    
+    elif message.voice:
         file_obj = message.voice
-        file_name = "voice.ogg"
         mime_type = "audio/ogg"
+        prompt = "Listen and summarize."
+        action = "UPLOAD_VOICE"
+        await update.message.reply_text("🎤 Слушаю голосовое...")
+
     elif message.audio:
         file_obj = message.audio
-        file_name = file_obj.file_name or "audio.mp3"
         mime_type = file_obj.mime_type or "audio/mpeg"
-    else:
-        return
+        prompt = "Listen and summarize."
+        action = "UPLOAD_VOICE"
+        await update.message.reply_text("🎧 Анализирую аудиофайл...")
+
+    if not file_obj: return
 
     if file_obj.file_size > 20 * 1024 * 1024:
-        await update.message.reply_text(
-            "⚠️ Файл слишком большой (>20MB). Telegram API не позволяет ботам скачивать такие файлы.")
+        await update.message.reply_text("⚠️ Файл слишком большой (>20MB). Telegram API не позволяет его скачать.")
         return
 
-    await context.bot.send_chat_action(chat_id=chat_id, action="UPLOAD_VOICE")
-    await update.message.reply_text("🎧 Слушаю и анализирую аудио... Это может занять время.")
+    await context.bot.send_chat_action(chat_id=chat_id, action=action)
 
     try:
         new_file = await context.bot.get_file(file_obj.file_id)
-        file_byte_array = await new_file.download_as_bytearray()
-
+        file_bytes = await new_file.download_as_bytearray()
+        
         loop = asyncio.get_running_loop()
-        summary = await loop.run_in_executor(None, summarize_audio, file_byte_array, mime_type)
-
-        await update.message.reply_text(
-            f"🎤 **Саммари аудио:**\n\n{summary}",
-            reply_markup=get_inline_keyboard_buttons(),
-            parse_mode="Markdown"
-        )
+        summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
+        
+        await update.message.reply_text(f"🤖 **Результат:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
     except Exception as e:
-        print(f"Audio Handler Error: {e}")
-        await update.message.reply_text(f"Ошибка обработки аудио: {e}")
+        print(f"Media Handler Error: {e}")
+        await update.message.reply_text(f"Ошибка: {e}")
 
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    doc = update.message.document
+    
+    if doc.mime_type == 'application/pdf':
+        await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
+        await update.message.reply_text("📄 Читаю PDF...")
+        
+        file_path = f"/tmp/{doc.file_unique_id}.pdf"
+        
+        try:
+            file = await context.bot.get_file(doc)
+            await file.download_to_drive(file_path)
+            
+            text_array = []
+            reader = PdfReader(file_path)
+            for page in reader.pages:
+                t = page.extract_text()
+                if t: text_array.append(t)
+            
+            loop = asyncio.get_running_loop()
+            summary = await loop.run_in_executor(None, summarize, text_array)
+            await update.message.reply_text(f"📝 **PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
+        except Exception as e:
+            print(f"PDF Error: {e}")
+            await update.message.reply_text(f"Ошибка чтения PDF: {e}")
+        finally:
+            if os.path.exists(file_path): os.remove(file_path)
+    
+    elif "image" in doc.mime_type or "audio" in doc.mime_type:
+         await update.message.reply_text("Пожалуйста, отправьте это как Фото (с сжатием) или Аудио, а не как Файл.")
+    else:
+        await update.message.reply_text(f"Я пока не умею читать файлы типа {doc.mime_type}, только PDF.")
 
 async def process_request(user_input, chat_id, update, context, from_webapp=False):
     try:
@@ -292,46 +306,24 @@ async def process_request(user_input, chat_id, update, context, from_webapp=Fals
         loop = asyncio.get_running_loop()
         summary = await loop.run_in_executor(None, summarize, text_array)
         prefix = "📱 **Результат из Web App:**\n\n" if from_webapp else ""
-        await context.bot.send_message(chat_id=chat_id, text=f"{prefix}{summary}",
-                                       reply_markup=get_inline_keyboard_buttons(),
-                                       parse_mode="Markdown" if from_webapp else None)
+        await context.bot.send_message(chat_id=chat_id, text=f"{prefix}{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown" if from_webapp else None)
     except Exception as e:
         print(f"Processing Error: {e}")
         await context.bot.send_message(chat_id=chat_id, text=f"Ошибка: {e}")
-
-
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    file_path = f"{update.message.document.file_unique_id}.pdf"
-    file = await context.bot.get_file(update.message.document)
-    await file.download_to_drive(file_path)
-    text_array = []
-    try:
-        reader = PdfReader(file_path)
-        for page in reader.pages:
-            t = page.extract_text()
-            if t: text_array.append(t)
-    except Exception as e:
-        print(f"PDF Error: {e}")
-    await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
-    loop = asyncio.get_running_loop()
-    summary = await loop.run_in_executor(None, summarize, text_array)
-    await update.message.reply_text(summary, reply_markup=get_inline_keyboard_buttons())
-    if os.path.exists(file_path): os.remove(file_path)
-
 
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == "explore_similar":
-        clean_text = query.message.text.replace("📱 **Результат из Web App:**", "")
-        clean_text = clean_text.replace("🎤 **Саммари аудио:**", "")
+        clean_text = query.message.text
+        for garbage in ["📱 **Результат из Web App:**", "🤖 **Результат:**", "📝 **PDF Summary:**", "🎤 **Саммари аудио:**"]:
+            clean_text = clean_text.replace(garbage, "")
+        
         prompt = f"{clean_text}\nGive 3 search keywords."
         keywords = call_gemini_api(prompt)
         results = await search_results(keywords)
         links = "\n".join([f"{r['title']} - {r['href']}" for r in results]) if results else "Ничего не найдено"
         await query.message.reply_text(links)
-
 
 def process_user_input(user_input):
     if re.match(r"https?://(www\.|m\.)?(youtube\.com|youtu\.be)/", user_input):
@@ -340,27 +332,21 @@ def process_user_input(user_input):
         return scrape_text_from_url(user_input)
     return split_user_input(user_input)
 
-
 def get_inline_keyboard_buttons():
     return InlineKeyboardMarkup([[InlineKeyboardButton("Explore Similar", callback_data="explore_similar")]])
 
-
 def main():
-    # list_available_models()
     app = ApplicationBuilder().token(telegram_token).build()
-
+    
     app.add_handler(CommandHandler('start', handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summarize))
-    app.add_handler(MessageHandler(filters.Document.PDF, handle_file))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
-
-    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_audio_message))
-
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO, handle_media_message))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(handle_button_click))
-
+    
     print("Bot is polling...")
     app.run_polling()
-
 
 if __name__ == '__main__':
     main()
