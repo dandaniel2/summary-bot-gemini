@@ -44,13 +44,21 @@ def scrape_text_from_url(url):
         return []
 
 async def search_results(keywords):
-    try:
-        with DDGS() as ddgs:
-            results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend='html')]
-        return results
-    except Exception as e:
-        print(f"DDG Error: {e}")
-        return []
+    backends = ['lite', 'html', 'api']
+    
+    with DDGS() as ddgs:
+        for backend in backends:
+            try:
+                await asyncio.sleep(0.5)
+                results = [r for r in ddgs.text(keywords, region=ddg_region, safesearch='off', max_results=3, backend=backend)]
+                if results:
+                    return results
+            except Exception as e:
+                print(f"DDG Backend '{backend}' failed: {e}")
+                continue
+                
+    print("All DDG backends failed.")
+    return []
 
 # --- ЛОГИКА ГЕНЕРАЦИИ (ТЕКСТ) ---
 
@@ -329,7 +337,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         keywords = keywords.replace('"', '').strip()
         
         results = await search_results(keywords)
-        links = "\n".join([f"{r['title']} - {r['href']}" for r in results]) if results else "Ничего не найдено (попробуйте позже)"
+        links = "\n".join([f"{r['title']} - {r['href']}" for r in results]) if results else "Ничего не найдено (или превышен лимит поиска)"
         await query.message.reply_text(links)
 
 def process_user_input(user_input):
