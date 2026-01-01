@@ -1,5 +1,9 @@
 # 🤖 Summary Gemini Bot
 
+![Python](https://img.shields.io/badge/python-3.11-blue.svg)
+![Docker](https://img.shields.io/badge/docker-ready-blue.svg)
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+
 An advanced Telegram bot powered by **Google Gemini** models. It generates concise summaries for text, articles, PDFs, YouTube videos, and even audio files.
 
 This is a fork of [summary-gpt-bot](https://github.com/tpai/summary-gpt-bot) migrating from OpenAI to Google Gemini, with added support for audio processing and Telegram Mini Apps.
