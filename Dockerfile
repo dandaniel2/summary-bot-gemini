@@ -1,4 +1,4 @@
-FROM debian:11-slim AS build
+FROM debian:12-slim AS build
 
 RUN apt-get update && \
     apt-get install --no-install-suggests --no-install-recommends --yes python3-venv gcc libpython3-dev && \
@@ -10,7 +10,7 @@ FROM build AS build-venv
 COPY requirements.txt /requirements.txt
 RUN /venv/bin/pip install --disable-pip-version-check -r /requirements.txt
 
-FROM gcr.io/distroless/python3-debian11:nonroot
+FROM gcr.io/distroless/python3-debian12:nonroot
 
 WORKDIR /app
 COPY --from=build-venv /venv /venv
