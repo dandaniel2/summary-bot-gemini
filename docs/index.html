@@ -2,62 +2,87 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Summarizer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gemini Input</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
-            font-family: sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--tg-theme-bg-color, #fff);
             color: var(--tg-theme-text-color, #000);
             display: flex;
             flex-direction: column;
             padding: 20px;
             margin: 0;
+            height: 100vh;
+            box-sizing: border-box;
+            
+            user-select: none;
+            -webkit-user-select: none;
         }
-        textarea {
-            width: 100%;
-            height: 150px;
-            margin-bottom: 20px;
-            padding: 10px;
-            border-radius: 10px;
-            border: 1px solid var(--tg-theme-hint-color, #ccc);
-            background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            color: var(--tg-theme-text-color, #000);
-            resize: none;
-            box-sizing: border-box; 
+
+        h3 {
+            margin-top: 0;
+            margin-bottom: 10px;
         }
+
         p {
             color: var(--tg-theme-hint-color, #999);
             font-size: 14px;
+            margin-bottom: 15px;
+        }
+
+        textarea {
+            width: 100%;
+            flex-grow: 1;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            background-color: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            color: var(--tg-theme-text-color, #000);
+            font-size: 16px;
+            resize: none;
+            box-sizing: border-box;
+            outline: none;
+
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            
+            -webkit-touch-callout: default !important;
+        }
+
+        textarea:focus {
+            border-color: var(--tg-theme-button-color, #3390ec);
         }
     </style>
 </head>
 <body>
-    <h3>AI Summarizer</h3>
-    <p>Вставьте ссылку на статью, YouTube или просто текст:</p>
-    <textarea id="inputText" placeholder="https://... или текст"></textarea>
+    <h3>Ввод текста</h3>
+    <p>Вставьте ссылку или длинный текст для анализа:</p>
+    
+    <textarea id="inputText" placeholder="Нажмите и удерживайте здесь, чтобы вставить текст..."></textarea>
     
     <script>
         const tg = window.Telegram.WebApp;
         
         tg.ready();
-        
-        tg.expand();
+        tg.expand(); 
 
-        tg.MainButton.setText("Сделать саммари");
+        tg.MainButton.setText("Отправить боту");
         tg.MainButton.show();
 
         tg.MainButton.onClick(function() {
             const data = document.getElementById("inputText").value;
-            
             if (data.trim() === "") {
-                tg.showAlert("Введите текст или ссылку!");
+                tg.HapticFeedback.notificationOccurred('error');
+                tg.showAlert("Поле пустое!");
                 return;
             }
-
+            tg.HapticFeedback.notificationOccurred('success');
             tg.sendData(data);
         });
+
+        document.getElementById("inputText").focus();
     </script>
 </body>
 </html>
