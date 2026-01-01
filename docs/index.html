@@ -118,38 +118,47 @@
 
             if (data.trim() === "") {
                 tg.HapticFeedback.notificationOccurred('error');
-                tg.showAlert("Введите текст перед отправкой!");
+                tg.showAlert("Введите текст!");
                 return;
             }
 
             try {
-                tg.HapticFeedback.notificationOccurred('success');
                 tg.sendData(data);
-                // setTimeout(() => tg.close(), 100); 
             } catch (e) {
-                tg.showAlert("Ошибка отправки: " + e.message);
+                tg.HapticFeedback.notificationOccurred('warning');
+                
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(data);
+                }
+                
+                tg.showPopup({
+                    title: 'Не тот тип кнопки',
+                    message: 'Телеграм запрещает отправку данных через это меню. Текст скопирован! Закройте окно и отправьте его как обычное сообщение.',
+                    buttons: [{type: 'ok'}]
+                }, function() {
+                    tg.close();
+                });
             }
         }
 
         function pasteFromClipboard() {
-            const textarea = document.getElementById("inputText");
-            textarea.focus();
-            
-            if (tg.readTextFromClipboard) {
-                tg.readTextFromClipboard((clipText) => {
-                    if (clipText) {
-                        textarea.value = clipText;
-                        tg.HapticFeedback.notificationOccurred('selection');
-                    } else {
-                        tg.showAlert("Буфер пуст или нет доступа. Используйте долгое нажатие.");
-                    }
-                });
-            } else {
-                navigator.clipboard.readText()
-                    .then(text => { textarea.value = text; })
-                    .catch(() => tg.showAlert("Нажмите долго на поле -> Вставить"));
-            }
-        }
+             const textarea = document.getElementById("inputText");
+             textarea.focus();
+             if (tg.readTextFromClipboard) {
+                 tg.readTextFromClipboard((clipText) => {
+                     if (clipText) {
+                         textarea.value = clipText;
+                         tg.HapticFeedback.notificationOccurred('selection');
+                     } else {
+                         tg.showAlert("Буфер пуст!");
+                     }
+                 });
+             } else {
+                 navigator.clipboard.readText()
+                     .then(text => { textarea.value = text; })
+                     .catch(() => tg.showAlert("Нажмите долго на поле -> Вставить"));
+             }
+         }
     </script>
 </body>
 </html>
