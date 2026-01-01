@@ -47,6 +47,15 @@ docker run -d \
   my-gemini-bot
 ```
 
+### Alternative: Run with Docker Compose[[1](https://www.google.com/url?sa=E&q=https%3A%2F%2Fgithub.com%2Fdandaniel2%2Fsummary-gemini-bot)]
+1. Create a `.env` file with your keys:
+   ```bash
+   TELEGRAM_TOKEN=your_token
+   GOOGLE_API_KEY=your_key
+2. Run:
+   ```bash
+   docker-compose up -d --build
+
 ## ⚙️ Configuration Variables
 
 You can customize the bot's behavior using these environment variables:
