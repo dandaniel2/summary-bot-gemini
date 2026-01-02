@@ -41,7 +41,7 @@ docker run -d \
   --restart always \
   -e TELEGRAM_TOKEN="YOUR_TELEGRAM_BOT_TOKEN" \
   -e GOOGLE_API_KEY="YOUR_GOOGLE_AI_STUDIO_KEY" \
-  -e LLM_MODEL="gemini-flash-lite-latest" \
+  -e LLM_MODEL="gemini-flash-latest" \
   -e TS_LANG="English" \
   -e ALLOWED_USERS="12345678,87654321" \
   my-gemini-bot
