@@ -53,7 +53,7 @@ docker run -d \
    TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
    GOOGLE_API_KEY=${GOOGLE_API_KEY}
    WEBAPP_URL=${WEBAPP_URL}
-   LLM_MODEL=${LLM_MODEL:-gemini-flash-lite-latest}
+   LLM_MODEL=${LLM_MODEL:-gemini-flash-latest}
    TS_LANG=${TS_LANG:-Russian}
    CHUNK_SIZE=100000
    GOOGLE_CSE_ID=${GOOGLE_CSE_ID}
