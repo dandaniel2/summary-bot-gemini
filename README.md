@@ -106,9 +106,8 @@ This allows the bot to search the web without getting blocked.
 
 To enable the "Input Text" button under the keyboard:
 1.  The `docs/index.html` file is ready to use.
-2.  Enable **GitHub Pages** in your repository settings (Source: `/docs` folder).
-3.  Set the `WEBAPP_URL` environment variable to your GitHub Pages URL (e.g., `https://username.github.io/repo/`).
-4.  Restart the bot.
+2.  Set the `WEBAPP_URL` environment variable to your GitHub Pages URL (e.g., `https://username.github.io/repo/`).
+3.  Restart the bot.
 
 ## 📜 License
 

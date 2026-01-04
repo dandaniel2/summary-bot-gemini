@@ -49,13 +49,7 @@
             border-color: var(--tg-theme-button-color, #3390ec);
         }
 
-        .buttons-row {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-
-        .btn {
+        .btn-paste {
             border: none;
             border-radius: 8px;
             font-size: 14px;
@@ -65,41 +59,26 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            background-color: var(--tg-theme-secondary-bg-color, #e0e0e0);
+            color: var(--tg-theme-text-color, #000);
+            margin-bottom: 10px;
+            align-self: flex-start;
             transition: opacity 0.2s;
         }
 
-        .btn:active { opacity: 0.7; }
-
-        .btn-paste {
-            background-color: var(--tg-theme-secondary-bg-color, #e0e0e0);
-            color: var(--tg-theme-text-color, #000);
-        }
-
-        .btn-send {
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #fff);
-            flex-grow: 1;
-            font-size: 16px;
-            padding: 14px;
-        }
+        .btn-paste:active { opacity: 0.7; }
     </style>
 </head>
 <body>
     <h3>AI Summary</h3>
     
-    <div class="buttons-row">
-        <button class="btn btn-paste" onclick="pasteFromClipboard()">
-            📋 Вставить
-        </button>
-    </div>
+    <button class="btn-paste" onclick="pasteFromClipboard()">
+        📋 Вставить из буфера
+    </button>
 
     <div class="input-container">
         <textarea id="inputText" placeholder="Введите текст или ссылку..."></textarea>
     </div>
-
-    <button class="btn btn-send" onclick="sendDataToBot()">
-        Отправить боту
-    </button>
     
     <script>
         const tg = window.Telegram.WebApp;
@@ -118,47 +97,42 @@
 
             if (data.trim() === "") {
                 tg.HapticFeedback.notificationOccurred('error');
-                tg.showAlert("Введите текст!");
+                tg.showAlert("Введите текст перед отправкой!");
                 return;
             }
 
             try {
+                tg.HapticFeedback.notificationOccurred('success');
                 tg.sendData(data);
             } catch (e) {
                 tg.HapticFeedback.notificationOccurred('warning');
-                
-                if (navigator.clipboard) {
-                    navigator.clipboard.writeText(data);
-                }
-                
                 tg.showPopup({
-                    title: 'Не тот тип кнопки',
-                    message: 'Телеграм запрещает отправку данных через это меню. Текст скопирован! Закройте окно и отправьте его как обычное сообщение.',
+                    title: 'Ошибка отправки',
+                    message: 'Пожалуйста, используйте кнопку "Ввод текста" под клавиатурой бота, а не меню настроек.',
                     buttons: [{type: 'ok'}]
-                }, function() {
-                    tg.close();
                 });
             }
         }
 
         function pasteFromClipboard() {
-             const textarea = document.getElementById("inputText");
-             textarea.focus();
-             if (tg.readTextFromClipboard) {
-                 tg.readTextFromClipboard((clipText) => {
-                     if (clipText) {
-                         textarea.value = clipText;
-                         tg.HapticFeedback.notificationOccurred('selection');
-                     } else {
-                         tg.showAlert("Буфер пуст!");
-                     }
-                 });
-             } else {
-                 navigator.clipboard.readText()
-                     .then(text => { textarea.value = text; })
-                     .catch(() => tg.showAlert("Нажмите долго на поле -> Вставить"));
-             }
-         }
+            const textarea = document.getElementById("inputText");
+            textarea.focus();
+            
+            if (tg.readTextFromClipboard) {
+                tg.readTextFromClipboard((clipText) => {
+                    if (clipText) {
+                        textarea.value = clipText;
+                        tg.HapticFeedback.notificationOccurred('selection');
+                    } else {
+                        tg.showAlert("Буфер пуст или нет доступа.");
+                    }
+                });
+            } else {
+                navigator.clipboard.readText()
+                    .then(text => { textarea.value = text; })
+                    .catch(() => tg.showAlert("Нажмите долго на поле -> Вставить"));
+            }
+        }
     </script>
 </body>
 </html>
