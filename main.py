@@ -119,8 +119,11 @@ def summarize(text_array):
             else: text_chunks = create_chunks(text_array)
 
         summaries = []
-        system_instruction = f"You are an expert summarizer. Respond in {lang}. Do not translate technical terms."
-
+        system_instruction = (
+            f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
+            "IMPORTANT: Do NOT use LaTeX formatting or dollar signs ($) for formulas/math. "
+            "Use standard plain text (e.g. write 'CO2', 'H2O', 'NAD+', 'ATP', not '$\\text{CO}_2$')."
+        )
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
             prompt = f"Summarize this:\n{chunk}"
@@ -141,7 +144,12 @@ def summarize(text_array):
 
 def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     if not client: return "API Key Error"
-    system_instruction = f"You are an expert analyst. Analyze the provided media. Respond in {lang}."
+
+    system_instruction = (
+        f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
+        "IMPORTANT: Do NOT use LaTeX formatting or dollar signs ($) for formulas/math. "
+        "Use standard plain text (e.g. write 'CO2', 'H2O', 'NAD+', 'ATP', not '$\\text{CO}_2$')."
+    )
     try:
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
         response = client.models.generate_content(
