@@ -16,7 +16,6 @@ This bot uses the official **Google Custom Search API** for the "Explore Similar
 - **🖼 Images (OCR):** Analyzes images and summarizes text within them.
 - **🎤 Audio & Voice:** Summarizes voice messages and audio files (MP3, WAV, M4A, OGG) directly via Gemini's multimodal capabilities.
 - **🔎 Explore Similar:** Performs a Google Search to find related articles using **Google Custom Search API**.
-- **📱 Mini App:** Supports a Web Interface (Telegram Mini App) for convenient text input.
 
 ## 🛠 Prerequisites
 
@@ -81,7 +80,6 @@ This allows the bot to search the web without getting blocked.
     LLM_MODEL=gemini-flash-latest
     TS_LANG=Russian
     ALLOWED_USERS=12345678
-    WEBAPP_URL=https://dandaniel2.github.io/summary-bot-gemini/
     ```
 
 2.  Run with Compose:
@@ -99,15 +97,7 @@ This allows the bot to search the web without getting blocked.
 | `LLM_MODEL` | The Gemini model version. Recommended: `gemini-flash-latest` or `gemini-1.5-flash`. | `gemini-flash-lite-latest` |
 | `TS_LANG` | The target language for the summary (e.g., `Russian`, `English`). | `Russian` |
 | `ALLOWED_USERS` | Comma-separated list of Telegram User IDs allowed to use the bot. | (Open to all if empty) |
-| `WEBAPP_URL` | URL to your hosted Web App (index.html) for the Mini App button. | (Optional) |
 | `CHUNK_SIZE` | Max characters per chunk. Gemini has a large context window, so we use a high value. | `100000` |
-
-## 📱 Mini App Setup (Optional)
-
-To enable the "Input Text" button under the keyboard:
-1.  The `docs/index.html` file is ready to use.
-2.  Set the `WEBAPP_URL` environment variable to your GitHub Pages URL (e.g., `https://username.github.io/repo/`).
-3.  Restart the bot.
 
 ## 📜 License
 
