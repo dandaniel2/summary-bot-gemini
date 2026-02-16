@@ -5,6 +5,7 @@ services:
     build: .
     container_name: gemini-summary-bot
     restart: always
+    network_mode: "host"
     environment:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
