@@ -16,7 +16,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 # --- КОНФИГУРАЦИЯ ---
 telegram_token = os.environ.get("TELEGRAM_TOKEN", "xxx")
 model_name = os.environ.get("LLM_MODEL", "gemini-flash-latest") 
-lang = os.environ.get("TS_LANG", "Russian")
+lang = os.environ.get("TS_LANG", "Russian") 
 chunk_size = int(os.environ.get("CHUNK_SIZE", 100000))
 allowed_users = os.environ.get("ALLOWED_USERS", "")
 google_api_key = os.environ.get("GOOGLE_API_KEY", "")
@@ -121,8 +121,9 @@ def summarize(text_array):
         summaries = []
         system_instruction = (
             f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
-            "IMPORTANT: Do NOT use LaTeX formatting or dollar signs ($) for formulas/math. "
-            "Use standard plain text (e.g. write 'CO2', 'H2O', 'NAD+', 'ATP', not '$\\text{CO}_2$')."
+            "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
+            "Do NOT use bold (**), italics (*), headers (#), or links []. "
+            "Do NOT use LaTeX or dollar signs ($). "
         )
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
@@ -147,8 +148,9 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
 
     system_instruction = (
         f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
-        "IMPORTANT: Do NOT use LaTeX formatting or dollar signs ($) for formulas/math. "
-        "Use standard plain text (e.g. write 'CO2', 'H2O', 'NAD+', 'ATP', not '$\\text{CO}_2$')."
+        "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
+        "Do NOT use bold (**), italics (*), headers (#), or links []. "
+        "Do NOT use LaTeX or dollar signs ($). "
     )
     try:
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
@@ -262,7 +264,7 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         markup = ReplyKeyboardMarkup(kb, resize_keyboard=True)
         await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
     else:
-        await update.message.reply_text(msg, parse_mode="Markdown")
+        await update.message.reply_text(msg)
 
 async def handle_summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -340,7 +342,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if t: text_array.append(t)
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, summarize, text_array)
-            await update.message.reply_text(f"📝 **PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown")
+            await update.message.reply_text(f"📝 **PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
             print(f"PDF Error: {e}")
             await update.message.reply_text(f"Ошибка PDF: {e}")
@@ -352,6 +354,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Не поддерживаю {doc.mime_type}.")
 
 async def process_request(user_input, chat_id, update, context, from_webapp=False):
+    if len(user_input.strip()) < 30 and not re.match(r"https?://", user_input.strip()):
+        await context.bot.send_message(chat_id=chat_id, text="⚠️ Текст слишком короткий (минимум 30 символов).")
+        return
+
     try:
         text_array = process_user_input(user_input)
         if not text_array:
