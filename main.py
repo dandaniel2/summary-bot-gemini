@@ -5,11 +5,12 @@ import time
 import urllib.parse
 import requests
 import trafilatura
+from datetime import datetime
 from google import genai
 from google.genai import types
 from PyPDF2 import PdfReader
 from tqdm import tqdm
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, WebAppInfo, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ApplicationBuilder, ContextTypes
 from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -21,7 +22,6 @@ chunk_size = int(os.environ.get("CHUNK_SIZE", 100000))
 allowed_users = os.environ.get("ALLOWED_USERS", "")
 google_api_key = os.environ.get("GOOGLE_API_KEY", "")
 google_cse_id = os.environ.get("GOOGLE_CSE_ID", "")
-webapp_url = os.environ.get("WEBAPP_URL", "") 
 
 client = None
 if google_api_key:
@@ -119,8 +119,10 @@ def summarize(text_array):
             else: text_chunks = create_chunks(text_array)
 
         summaries = []
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         system_instruction = (
             f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
+            f"Current date and time: {current_time}. "
             "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
             "Do NOT use bold (**), italics (*), headers (#), or links []. "
             "Do NOT use LaTeX or dollar signs ($). "
@@ -146,8 +148,10 @@ def summarize(text_array):
 def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     if not client: return "API Key Error"
 
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_instruction = (
         f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
+        f"Current date and time: {current_time}. "
         "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
         "Do NOT use bold (**), italics (*), headers (#), or links []. "
         "Do NOT use LaTeX or dollar signs ($). "
@@ -256,15 +260,10 @@ def retrieve_yt_transcript_from_url(youtube_url):
 # --- HANDLERS ---
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = (f"👋 Привет! Я использую модель {model_name}.\n\n"
-           "**Я умею анализировать:**\n📝 Текст и ссылки\n📺 YouTube\n📄 PDF\n🖼 Фото\n🎤 Аудио\n\n"
+    msg = (f"Привет! Я использую модель {model_name}.\n\n"
+           "Я умею анализировать:\nТекст и ссылки\nYouTube\nPDF\nФото\nАудио\n\n"
            "Кидай что угодно!")
-    if webapp_url:
-        kb = [[KeyboardButton(text="📱 Ввод текста (Mini App)", web_app=WebAppInfo(url=webapp_url))]]
-        markup = ReplyKeyboardMarkup(kb, resize_keyboard=True)
-        await update.message.reply_text(msg, reply_markup=markup, parse_mode="Markdown")
-    else:
-        await update.message.reply_text(msg)
+    await update.message.reply_text(msg)
 
 async def handle_summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -272,12 +271,6 @@ async def handle_summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Access denied.")
         return
     await process_request(update.message.text, chat_id, update, context)
-
-async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    if allowed_users and str(chat_id) not in allowed_users.split(','): return
-    data = update.effective_message.web_app_data.data
-    await process_request(data, chat_id, update, context, from_webapp=True)
 
 async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -295,19 +288,19 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         mime_type = "image/jpeg"
         prompt = "Describe this image and summarize text."
         action = "UPLOAD_PHOTO"
-        await update.message.reply_text("🖼 Анализирую фото...")
+        await update.message.reply_text("Анализирую фото...")
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
         prompt = "Listen and summarize."
         action = "UPLOAD_VOICE"
-        await update.message.reply_text("🎤 Слушаю...")
+        await update.message.reply_text("Слушаю...")
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
         prompt = "Listen and summarize."
         action = "UPLOAD_VOICE"
-        await update.message.reply_text("🎧 Анализирую аудио...")
+        await update.message.reply_text("Анализирую аудио...")
 
     if not file_obj: return
     if file_obj.file_size > 20 * 1024 * 1024:
@@ -320,7 +313,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         file_bytes = await new_file.download_as_bytearray()
         loop = asyncio.get_running_loop()
         summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
-        await update.message.reply_text(f"🤖 Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
+        await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Media Error: {e}")
         await update.message.reply_text(f"Ошибка: {e}")
@@ -330,7 +323,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     if doc.mime_type == 'application/pdf':
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
-        await update.message.reply_text("📄 Читаю PDF...")
+        await update.message.reply_text("Читаю PDF...")
         file_path = f"/tmp/{doc.file_unique_id}.pdf"
         try:
             file = await context.bot.get_file(doc)
@@ -342,7 +335,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if t: text_array.append(t)
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, summarize, text_array)
-            await update.message.reply_text(f"📝 **PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
+            await update.message.reply_text(f"**PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
             print(f"PDF Error: {e}")
             await update.message.reply_text(f"Ошибка PDF: {e}")
@@ -353,9 +346,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(f"Не поддерживаю {doc.mime_type}.")
 
-async def process_request(user_input, chat_id, update, context, from_webapp=False):
+async def process_request(user_input, chat_id, update, context):
     if len(user_input.strip()) < 30 and not re.match(r"https?://", user_input.strip()):
-        await context.bot.send_message(chat_id=chat_id, text="⚠️ Текст слишком короткий (минимум 30 символов).")
+        await context.bot.send_message(chat_id=chat_id, text="Текст слишком короткий (минимум 30 символов).")
         return
 
     try:
@@ -367,8 +360,7 @@ async def process_request(user_input, chat_id, update, context, from_webapp=Fals
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
         loop = asyncio.get_running_loop()
         summary = await loop.run_in_executor(None, summarize, text_array)
-        prefix = "📱 **Результат из Web App:**\n\n" if from_webapp else ""
-        await context.bot.send_message(chat_id=chat_id, text=f"{prefix}{summary}", reply_markup=get_inline_keyboard_buttons(), parse_mode="Markdown" if from_webapp else None)
+        await context.bot.send_message(chat_id=chat_id, text=f"{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Processing Error: {e}")
         await context.bot.send_message(chat_id=chat_id, text=f"Ошибка: {e}")
@@ -378,7 +370,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     if query.data == "explore_similar":
         clean_text = query.message.text
-        for garbage in ["📱 **Результат из Web App:**", "🤖 **Результат:**", "📝 **PDF Summary:**", "🎤 **Саммари аудио:**"]:
+        for garbage in ["Результат из Web App:", "Результат:", "PDF Summary:", "Саммари аудио:"]:
             clean_text = clean_text.replace(garbage, "")
         
         prompt = (f"{clean_text}\n"
@@ -395,7 +387,7 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             encoded = urllib.parse.quote(keywords)
             await query.message.reply_text(
-                f"🔎 **Авто-поиск недоступен.**\n👉 [Google: {keywords}](https://www.google.com/search?q={encoded})",
+                f"**Авто-поиск недоступен.**\n[Google: {keywords}](https://www.google.com/search?q={encoded})",
                 parse_mode="Markdown"
             )
 
@@ -414,7 +406,6 @@ def main():
     app = ApplicationBuilder().token(telegram_token).build()
     app.add_handler(CommandHandler('start', handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summarize))
-    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO, handle_media_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(handle_button_click))

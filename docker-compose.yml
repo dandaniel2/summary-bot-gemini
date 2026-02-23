@@ -11,5 +11,4 @@ services:
       - LLM_MODEL=${LLM_MODEL:-gemini-flash-latest}
       - TS_LANG=${TS_LANG:-Russian}
       - CHUNK_SIZE=100000
-      - WEBAPP_URL=${WEBAPP_URL}
       - ALLOWED_USERS=${ALLOWED_USERS}
