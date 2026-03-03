@@ -121,15 +121,24 @@ def summarize(text_array):
         summaries = []
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         system_instruction = (
-            f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
+            f"You are an expert content analyst. Respond in {lang}. "
             f"Current date and time: {current_time}. "
+            "First, determine the type of content: educational/lecture, news, entertainment, or other. "
+            "Then adapt your output accordingly: "
+            "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
+            "- News: provide a concise factual summary covering who, what, when, where, why. "
+            "- Entertainment (podcast, interview, video): highlight key moments, main opinions, and notable takeaways. "
+            "- Other: provide a clear, concise summary of the main points. "
             "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
             "Do NOT use bold (**), italics (*), headers (#), or links []. "
             "Do NOT use LaTeX or dollar signs ($). "
         )
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
-            prompt = f"Summarize this:\n{chunk}"
+            prompt = (
+                f"Analyze the following content. First identify its type (educational, news, entertainment, or other), "
+                f"then provide the appropriate structured output as instructed:\n{chunk}"
+            )
             result = call_gemini_with_retry(prompt, system_instruction)
             if result: summaries.append(result)
             if i < len(text_chunks) - 1: time.sleep(2)
@@ -150,8 +159,14 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
 
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_instruction = (
-        f"You are an expert analyst. Analyze the provided media. Respond in {lang}. "
+        f"You are an expert content analyst. Analyze the provided media. Respond in {lang}. "
         f"Current date and time: {current_time}. "
+        "First, determine the type of content: educational/lecture, news, entertainment, or other. "
+        "Then adapt your output accordingly: "
+        "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
+        "- News: provide a concise factual summary covering who, what, when, where, why. "
+        "- Entertainment (podcast, interview, video): highlight key moments, main opinions, and notable takeaways. "
+        "- Other: provide a clear, concise summary of the main points. "
         "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
         "Do NOT use bold (**), italics (*), headers (#), or links []. "
         "Do NOT use LaTeX or dollar signs ($). "
@@ -286,19 +301,23 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if message.photo:
         file_obj = message.photo[-1]
         mime_type = "image/jpeg"
-        prompt = "Describe this image and summarize text."
+        prompt = "Analyze this image. If it contains educational or lecture material, extract all specific rules, definitions, formulas, exceptions, and examples. Present them as a structured list. If it is not educational material, describe what is shown."
         action = "UPLOAD_PHOTO"
         await update.message.reply_text("Анализирую фото...")
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
-        prompt = "Listen and summarize."
+        prompt = ("Listen to this audio. First identify its type (educational lecture, news, entertainment/podcast, or other), "
+                  "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
+                  "for news give a concise factual summary; for entertainment highlight key moments and takeaways.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Слушаю...")
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
-        prompt = "Listen and summarize."
+        prompt = ("Listen to this audio. First identify its type (educational lecture, news, entertainment/podcast, or other), "
+                  "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
+                  "for news give a concise factual summary; for entertainment highlight key moments and takeaways.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Анализирую аудио...")
 
