@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # --- SETTINGS ---
-PROJECT_DIR="~/summary-bot-gemini"
+PROJECT_DIR="$HOME/summary-bot-gemini"
 # Your Telegram ID for update notifications
 ADMIN_ID="6552990229"
 # -----------------
