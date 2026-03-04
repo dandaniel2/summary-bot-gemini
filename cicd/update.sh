@@ -35,7 +35,7 @@ git_status=$?
 
 if [ $git_status -ne 0 ]; then
     echo "Git Pull Failed!"
-    send_telegram "⚠️ **Update Error (Git Pull Failed)**\nFailed to pull code from GitHub.\n\`$git_output\`"
+    send_telegram "⚠️ **Update Error (Git Pull Failed)** Failed to pull code from GitHub.\`$git_output\`"
     exit 1
 fi
 
@@ -52,7 +52,7 @@ if [ $? -ne 0 ]; then
     echo "Docker Build Failed!"
     # ROLLBACK
     git reset --hard "$PREV_COMMIT"
-    send_telegram "❌ **Build Failed**\nDocker build failed. Rolled back to previous stable commit."
+    send_telegram "❌ **Build Failed** Docker build failed. Rolled back to previous stable commit."
     exit 1
 fi
 
@@ -79,5 +79,5 @@ else
     git reset --hard "$PREV_COMMIT"
     
     # Send detailed error report to Telegram
-    send_telegram "🚫 **Update Aborted (Syntax Error)**\n\nErrors detected:\n\`\`\`\n$test_output\n\`\`\`\nFiles have been rolled back to the last working version."
+    send_telegram "🚫 **Update Aborted (Syntax Error)** Errors detected:\`\`\`$test_output\`\`\` Files have been rolled back to the last working version."
 fi
