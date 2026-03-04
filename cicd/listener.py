@@ -32,19 +32,19 @@ def handle_github_webhook():
     # --- Branch Verification Logic ---
     try:
         payload = request.json
-        # GitHub provides the branch info in the "ref" field (e.g., "refs/heads/main")
+        # GitHub provides the branch info in the "ref" field (e.g., "refs/heads/master")
         ref = payload.get('ref', '')
         
-        # Only proceed if the push happened on the 'main' branch
-        if not ref.endswith('main'):
-            print(f"Push to {ref} ignored. Waiting for push to main.")
+        # Only proceed if the push happened on the 'master' branch
+        if not ref.endswith('master'):
+            print(f"Push to {ref} ignored. Waiting for push to master.")
             return 'Ignored (wrong branch)', 200
     except Exception as e:
         print(f"Error parsing payload: {e}")
     # ------------------------------------
 
     # 3. If everything is valid, trigger the update script
-    print("Valid GitHub push received to main. Starting update script...")
+    print("Valid GitHub push received to master. Starting update script...")
     # Run update.sh in the background to avoid blocking the response
     subprocess.Popen(['~/summary-bot-gemini/cicd/update.sh'])
     

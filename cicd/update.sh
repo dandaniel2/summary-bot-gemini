@@ -32,7 +32,7 @@ send_telegram() {
 
 # 1. Pull updates from GitHub
 echo "Pulling from GitHub..."
-git_output=$(git pull origin main 2>&1)
+git_output=$(git pull origin master 2>&1)
 git_status=$?
 
 if [ $git_status -ne 0 ]; then
@@ -58,12 +58,12 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# 3. Test Python syntax inside the container (CI step)
-echo "Testing syntax..."
-docker compose run --rm --no-deps --entrypoint "python -m py_compile main.py" bot
+# 3. Test for errors using pyflakes (Catching NameErrors, undefined vars, etc.)
+echo "Testing code integrity..."
+docker compose run --rm --no-deps --entrypoint "python -m pyflakes main.py" bot
 
 if [ $? -eq 0 ]; then
-    echo "Syntax Check Passed!"
+    echo "Code Integrity Check Passed!"
     
     # 4. Restart the service with new code (CD step)
     echo "Restarting Service..."
