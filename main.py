@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 from PyPDF2 import PdfReader
 from tqdm import tqdm
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ApplicationBuilder, ContextTypes
 from youtube_transcript_api import YouTubeTranscriptApi
 
