@@ -70,7 +70,7 @@ if [ $test_status -eq 0 ]; then
     docker compose up -d
     
     echo "Update Completed!"
-    send_telegram "✅ **Bot updated successfully!**\nNew version is now live."
+    send_telegram "✅ **Bot updated successfully!**New version is now live."
 else
     echo "Syntax Error Detected!"
     
