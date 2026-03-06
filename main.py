@@ -2,6 +2,7 @@ import asyncio
 import os
 import re
 import time
+import uuid
 import urllib.parse
 import requests
 import trafilatura
@@ -97,7 +98,9 @@ async def search_results(keywords):
 
 # --- ГЕНЕРАЦИЯ ---
 
-def summarize(text_array):
+def summarize(text_array, target_lang=None):
+    if target_lang is None:
+        target_lang = lang
     def create_chunks(paragraphs):
         chunks = []
         chunk = ''
@@ -121,13 +124,12 @@ def summarize(text_array):
         summaries = []
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         system_instruction = (
-            f"You are an expert content analyst. Respond in {lang}. "
+            f"You are an expert content analyst. Respond in {target_lang}. "
             f"Current date and time: {current_time}. "
-            "First, determine the type of content: educational/lecture, news, entertainment, or other. "
+            "First, determine the type of content: educational/lecture, news, or other. "
             "Then adapt your output accordingly: "
             "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
             "- News: provide a concise factual summary covering who, what, when, where, why. "
-            "- Entertainment (podcast, interview, video): highlight key moments, main opinions, and notable takeaways. "
             "- Other: provide a clear, concise summary of the main points. "
             "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
             "Do NOT use bold (**), italics (*), headers (#), or links []. "
@@ -136,7 +138,7 @@ def summarize(text_array):
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
             prompt = (
-                f"Analyze the following content. First identify its type (educational, news, entertainment, or other), "
+                f"Analyze the following content. First identify its type (educational, news, or other), "
                 f"then provide the appropriate structured output as instructed:\n{chunk}"
             )
             result = call_gemini_with_retry(prompt, system_instruction)
@@ -147,25 +149,26 @@ def summarize(text_array):
         if len(summaries) == 1: return summaries[0]
         
         summary = ' '.join(summaries)
-        final_prompt = f"Combine these points into a final summary in {lang}:\n{summary}"
+        final_prompt = f"Combine these points into a final summary in {target_lang}:\n{summary}"
         return call_gemini_with_retry(final_prompt, system_instruction)
 
     except Exception as e:
         print(f"Summarize Error: {e}")
         return f"Error: {e}"
 
-def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
+def analyze_media(file_bytes, mime_type, prompt_text="Summarize this.", target_lang=None):
+    if target_lang is None:
+        target_lang = lang
     if not client: return "API Key Error"
 
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_instruction = (
-        f"You are an expert content analyst. Analyze the provided media. Respond in {lang}. "
+        f"You are an expert content analyst. Analyze the provided media. Respond in {target_lang}. "
         f"Current date and time: {current_time}. "
-        "First, determine the type of content: educational/lecture, news, entertainment, or other. "
+        "First, determine the type of content: educational/lecture, news, or other. "
         "Then adapt your output accordingly: "
         "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
         "- News: provide a concise factual summary covering who, what, when, where, why. "
-        "- Entertainment (podcast, interview, video): highlight key moments, main opinions, and notable takeaways. "
         "- Other: provide a clear, concise summary of the main points. "
         "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
         "Do NOT use bold (**), italics (*), headers (#), or links []. "
@@ -207,6 +210,28 @@ def call_gemini_api(prompt, system_instruction=None):
         if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e): return "429"
         print(f"Gemini API Error: {e}")
         return ""
+
+def detect_language(content, mime_type=None):
+    if not client: return "MATCH"
+    prompt = f"Detect the primary language of the following content. If it closely matches '{lang}', reply ONLY with the word 'MATCH'. Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish'). Do not provide any other text."
+    
+    try:
+        config = types.GenerateContentConfig(temperature=0.1)
+        if mime_type:
+            contents = [types.Part.from_bytes(data=content, mime_type=mime_type), prompt]
+        else:
+            text_sample = "\n".join(content)[:2000] if isinstance(content, list) else str(content)[:2000]
+            contents = [prompt, text_sample]
+            
+        response = client.models.generate_content(
+            model=model_name, contents=contents, config=config
+        )
+        if response.text:
+            return response.text.strip().upper() if response.text.strip().upper() == "MATCH" else response.text.strip()
+        return "MATCH"
+    except Exception as e:
+        print(f"Language Detection Error: {e}")
+        return "MATCH"
 
 # --- YOUTUBE & FILES (Исправлен импорт) ---
 
@@ -307,17 +332,17 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
-        prompt = ("Listen to this audio. First identify its type (educational lecture, news, entertainment/podcast, or other), "
+        prompt = ("Listen to this audio. First identify its type (educational lecture, news or other), "
                   "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
-                  "for news give a concise factual summary; for entertainment highlight key moments and takeaways.")
+                  "for news give a concise factual summary.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Слушаю...")
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
-        prompt = ("Listen to this audio. First identify its type (educational lecture, news, entertainment/podcast, or other), "
+        prompt = ("Listen to this audio. First identify its type (educational lecture, news or other), "
                   "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
-                  "for news give a concise factual summary; for entertainment highlight key moments and takeaways.")
+                  "for news give a concise factual summary.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Анализирую аудио...")
 
@@ -331,7 +356,24 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         new_file = await context.bot.get_file(file_obj.file_id)
         file_bytes = await new_file.download_as_bytearray()
         loop = asyncio.get_running_loop()
-        summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
+        
+        detected_lang = await loop.run_in_executor(None, detect_language, file_bytes, mime_type)
+        if detected_lang != "MATCH":
+            req_id = str(uuid.uuid4())[:8]
+            context.chat_data[req_id] = {
+                "type": "media",
+                "file_bytes": file_bytes,
+                "mime_type": mime_type,
+                "prompt": prompt
+            }
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
+                [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
+            ])
+            await update.message.reply_text(f"Язык материала: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+            return
+            
+        summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
         await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Media Error: {e}")
@@ -353,7 +395,22 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 t = page.extract_text()
                 if t: text_array.append(t)
             loop = asyncio.get_running_loop()
-            summary = await loop.run_in_executor(None, summarize, text_array)
+            
+            detected_lang = await loop.run_in_executor(None, detect_language, text_array, None)
+            if detected_lang != "MATCH":
+                req_id = str(uuid.uuid4())[:8]
+                context.chat_data[req_id] = {
+                    "type": "text",
+                    "text_array": text_array
+                }
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
+                    [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
+                ])
+                await update.message.reply_text(f"Язык документа: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+                return
+                
+            summary = await loop.run_in_executor(None, summarize, text_array, lang)
             await update.message.reply_text(f"**PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
             print(f"PDF Error: {e}")
@@ -378,7 +435,22 @@ async def process_request(user_input, chat_id, update, context):
             return
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
         loop = asyncio.get_running_loop()
-        summary = await loop.run_in_executor(None, summarize, text_array)
+        
+        detected_lang = await loop.run_in_executor(None, detect_language, text_array, None)
+        if detected_lang != "MATCH":
+            req_id = str(uuid.uuid4())[:8]
+            context.chat_data[req_id] = {
+                "type": "text",
+                "text_array": text_array
+            }
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
+                [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
+            ])
+            await context.bot.send_message(chat_id=chat_id, text=f"Язык текста: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+            return
+            
+        summary = await loop.run_in_executor(None, summarize, text_array, lang)
         await context.bot.send_message(chat_id=chat_id, text=f"{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Processing Error: {e}")
@@ -387,6 +459,36 @@ async def process_request(user_input, chat_id, update, context):
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    
+    if query.data.startswith("lang|"):
+        _, req_id, chosen_lang = query.data.split("|")
+        req_data = context.chat_data.get(req_id)
+        if not req_data:
+            await query.edit_message_text("❌ Запрос устарел или не найден.")
+            return
+            
+        await query.edit_message_text(f"⏳ Генерирую ответ на языке: {chosen_lang}...")
+        loop = asyncio.get_running_loop()
+        
+        try:
+            if req_data["type"] == "media":
+                summary = await loop.run_in_executor(
+                    None, analyze_media, 
+                    req_data["file_bytes"], req_data["mime_type"], req_data["prompt"], chosen_lang
+                )
+            else:
+                summary = await loop.run_in_executor(
+                    None, summarize, 
+                    req_data["text_array"], chosen_lang
+                )
+            await query.edit_message_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
+        except Exception as e:
+            print(f"Error processing language callback: {e}")
+            await query.edit_message_text(f"❌ Ошибка генерации: {e}")
+        finally:
+            del context.chat_data[req_id]
+        return
+
     if query.data == "explore_similar":
         clean_text = query.message.text
         for garbage in ["Результат из Web App:", "Результат:", "PDF Summary:", "Саммари аудио:"]:
@@ -432,4 +534,4 @@ def main():
     app.run_polling()
 
 if __name__ == '__main__':
-    maindkyriu5suu343vdsvsdvds
+    main()
