@@ -176,9 +176,10 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this.", target_l
     )
     try:
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
+        full_prompt = f"{prompt_text}\nYour response MUST be written in {target_lang}."
         response = client.models.generate_content(
             model=model_name,
-            contents=[types.Part.from_bytes(data=file_bytes, mime_type=mime_type), prompt_text],
+            contents=[types.Part.from_bytes(data=file_bytes, mime_type=mime_type), full_prompt],
             config=config
         )
         if response.text: return response.text.strip()
