@@ -213,25 +213,29 @@ def call_gemini_api(prompt, system_instruction=None):
 
 def detect_language(content, mime_type=None):
     if not client: return "MATCH"
-    prompt = (f"Detect the primary language of the following content. "
-              f"If it closely matches '{lang}', reply ONLY with the word 'MATCH'. "
-              f"If there is no text or speech in the content at all, reply ONLY with the word 'MATCH'. "
-              f"Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish'). "
-              f"Do not provide any other text.")
-    
+    prompt = (
+        f"INSTRUCTION (ignore this instruction's language when detecting): "
+        f"Detect the primary spoken or written language found in the CONTENT below (not the language of this instruction). "
+        f"If the content language closely matches '{lang}', reply ONLY with the word 'MATCH'. "
+        f"If there is no detectable text or speech in the content, reply ONLY with the word 'MATCH'. "
+        f"Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish', 'Russian'). "
+        f"Do not provide any other text."
+    )
+
     try:
         config = types.GenerateContentConfig(temperature=0.1)
         if mime_type:
-            contents = [types.Part.from_bytes(data=content, mime_type=mime_type), prompt]
+            contents = [prompt, types.Part.from_bytes(data=content, mime_type=mime_type)]
         else:
             text_sample = "\n".join(content)[:2000] if isinstance(content, list) else str(content)[:2000]
             contents = [prompt, text_sample]
-            
+
         response = client.models.generate_content(
             model=model_name, contents=contents, config=config
         )
         if response.text:
-            return response.text.strip().upper() if response.text.strip().upper() == "MATCH" else response.text.strip()
+            result = response.text.strip()
+            return "MATCH" if result.upper() == "MATCH" else result
         return "MATCH"
     except Exception as e:
         print(f"Language Detection Error: {e}")
