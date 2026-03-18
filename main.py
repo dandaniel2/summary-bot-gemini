@@ -213,7 +213,11 @@ def call_gemini_api(prompt, system_instruction=None):
 
 def detect_language(content, mime_type=None):
     if not client: return "MATCH"
-    prompt = f"Detect the primary language of the following content. If it closely matches '{lang}', reply ONLY with the word 'MATCH'. Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish'). Do not provide any other text."
+    prompt = (f"Detect the primary language of the following content. "
+              f"If it closely matches '{lang}', reply ONLY with the word 'MATCH'. "
+              f"If there is no text or speech in the content at all, reply ONLY with the word 'MATCH'. "
+              f"Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish'). "
+              f"Do not provide any other text.")
     
     try:
         config = types.GenerateContentConfig(temperature=0.1)
