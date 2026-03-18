@@ -214,16 +214,21 @@ def call_gemini_api(prompt, system_instruction=None):
 def detect_language(content, mime_type=None):
     if not client: return "MATCH"
     prompt = (
-        f"INSTRUCTION (ignore this instruction's language when detecting): "
-        f"Detect the primary spoken or written language found in the CONTENT below (not the language of this instruction). "
-        f"If the content language closely matches '{lang}', reply ONLY with the word 'MATCH'. "
-        f"If there is no detectable text or speech in the content, reply ONLY with the word 'MATCH'. "
-        f"Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish', 'Russian'). "
-        f"Do not provide any other text."
+        f"Detect the primary spoken or written language of the provided content. "
+        f"The language of this instruction is irrelevant — analyze only the content itself. "
+        f"If the content language matches '{lang}', output: MATCH. "
+        f"If there is no speech or text in the content at all, output: MATCH. "
+        f"If you are not confident, output: MATCH. "
+        f"Otherwise output only the English name of the detected language, e.g.: English"
     )
 
     try:
-        config = types.GenerateContentConfig(temperature=0.1)
+        system_instruction = (
+            "You are a strict language classifier. "
+            "Output ONLY a single word: either 'MATCH' or the English name of the language. "
+            "No punctuation, no explanation, no extra words."
+        )
+        config = types.GenerateContentConfig(temperature=0.0, system_instruction=system_instruction)
         if mime_type:
             contents = [prompt, types.Part.from_bytes(data=content, mime_type=mime_type)]
         else:
@@ -235,6 +240,9 @@ def detect_language(content, mime_type=None):
         )
         if response.text:
             result = response.text.strip()
+            # If model returned more than one word it's confused — treat as MATCH
+            if " " in result or "\n" in result:
+                return "MATCH"
             return "MATCH" if result.upper() == "MATCH" else result
         return "MATCH"
     except Exception as e:
