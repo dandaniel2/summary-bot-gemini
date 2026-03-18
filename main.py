@@ -301,7 +301,7 @@ def retrieve_yt_transcript_from_url(youtube_url):
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = (f"Привет! Я использую модель {model_name}.\n\n"
-           "Я умею анализировать:\nТекст и ссылки\nYouTube\nPDF\nФото\nАудио\n\n"
+           "Я умею анализировать:\nТекст и ссылки\nYouTube\nPDF\nФото\nАудио\nВидео\n\n"
            "Кидай что угодно!")
     await update.message.reply_text(msg)
 
@@ -345,6 +345,20 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
                   "for news give a concise factual summary.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Анализирую аудио...")
+    elif message.video:
+        file_obj = message.video
+        mime_type = file_obj.mime_type or "video/mp4"
+        prompt = ("Watch this video. First identify its type (educational lecture, news or other), "
+                  "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
+                  "for news give a concise factual summary; for other content describe what is shown.")
+        action = "UPLOAD_VIDEO"
+        await update.message.reply_text("Анализирую видео...")
+    elif message.video_note:
+        file_obj = message.video_note
+        mime_type = "video/mp4"
+        prompt = "Watch this video note and describe or summarize its content."
+        action = "UPLOAD_VIDEO"
+        await update.message.reply_text("Анализирую видео-сообщение...")
 
     if not file_obj: return
     if file_obj.file_size > 20 * 1024 * 1024:
@@ -418,7 +432,42 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         finally:
             if os.path.exists(file_path): os.remove(file_path)
     elif "image" in doc.mime_type or "audio" in doc.mime_type:
-         await update.message.reply_text("Отправьте как Фото/Аудио, а не как Файл.")
+        await update.message.reply_text("Отправьте как Фото/Аудио, а не как Файл.")
+    elif "video" in doc.mime_type:
+        await update.message.reply_text("Видео-файл получен как документ.")
+        await context.bot.send_chat_action(chat_id=chat_id, action="UPLOAD_VIDEO")
+        try:
+            file_size = doc.file_size or 0
+            if file_size > 20 * 1024 * 1024:
+                await update.message.reply_text("⚠️ Файл >20MB.")
+                return
+            new_file = await context.bot.get_file(doc)
+            file_bytes = await new_file.download_as_bytearray()
+            mime_type = doc.mime_type or "video/mp4"
+            prompt = ("Watch this video. First identify its type (educational lecture, news or other), "
+                      "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
+                      "for news give a concise factual summary; for other content describe what is shown.")
+            loop = asyncio.get_running_loop()
+            detected_lang = await loop.run_in_executor(None, detect_language, file_bytes, mime_type)
+            if detected_lang != "MATCH":
+                req_id = str(uuid.uuid4())[:8]
+                context.chat_data[req_id] = {
+                    "type": "media",
+                    "file_bytes": file_bytes,
+                    "mime_type": mime_type,
+                    "prompt": prompt
+                }
+                keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
+                    [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
+                ])
+                await update.message.reply_text(f"Язык материала: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+                return
+            summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
+            await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
+        except Exception as e:
+            print(f"Video Doc Error: {e}")
+            await update.message.reply_text(f"Ошибка видео: {e}")
     else:
         await update.message.reply_text(f"Не поддерживаю {doc.mime_type}.")
 
@@ -527,7 +576,7 @@ def main():
     app = ApplicationBuilder().token(telegram_token).build()
     app.add_handler(CommandHandler('start', handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summarize))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO, handle_media_message))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE, handle_media_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(handle_button_click))
     print("Bot is polling...")
