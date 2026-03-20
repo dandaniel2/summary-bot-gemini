@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 import time
-import uuid
 import urllib.parse
 import requests
 import trafilatura
@@ -189,6 +188,59 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this.", target_l
         print(f"Media Error: {e}")
         return f"Ошибка обработки медиа: {e}"
 
+def detect_content_language(text):
+    """Determines the primary language of the given text using Gemini.
+    Returns a language name in English (e.g. 'English', 'Russian', 'German')."""
+    if not client:
+        return "Russian"
+    sample = text[:2000] if len(text) > 2000 else text
+    prompt = (
+        f"Detect the primary language of the following text. "
+        f"Reply with ONLY the language name in English (e.g. 'Russian', 'English', 'German'). "
+        f"No extra words.\n\n{sample}"
+    )
+    result = call_gemini_api(prompt)
+    if not result:
+        return "Russian"
+    return result.strip().split()[0]  # take first word just in case
+
+def detect_media_language(file_bytes, mime_type):
+    """Asks Gemini what language the media content is in.
+    Returns a language name in English."""
+    if not client:
+        return "Russian"
+    try:
+        config = types.GenerateContentConfig(temperature=0.1)
+        prompt = (
+            "What is the primary spoken or written language in this media? "
+            "Reply with ONLY the language name in English (e.g. 'Russian', 'English', 'German'). "
+            "No extra words."
+        )
+        response = client.models.generate_content(
+            model=model_name,
+            contents=[types.Part.from_bytes(data=file_bytes, mime_type=mime_type), prompt],
+            config=config
+        )
+        if response.text:
+            return response.text.strip().split()[0]
+        return "Russian"
+    except Exception as e:
+        print(f"detect_media_language error: {e}")
+        return "Russian"
+
+async def ask_lang_choice(send_fn, context, chat_id, content_lang, pending_key, pending_value):
+    """Stores pending content and sends the language-choice keyboard."""
+    context.user_data[pending_key] = pending_value
+    context.user_data["pending_content_lang"] = content_lang
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton("🇷🇺 На русском", callback_data="choose_lang_russian"),
+        InlineKeyboardButton(f"🌐 На языке оригинала ({content_lang})", callback_data="choose_lang_original"),
+    ]])
+    await send_fn(
+        text=f"Контент обнаружен на языке: {content_lang}.\nНа каком языке хотите получить ответ?",
+        reply_markup=keyboard,
+    )
+
 def call_gemini_with_retry(prompt, system_instruction, retries=3):
     for attempt in range(retries):
         res = call_gemini_api(prompt, system_instruction)
@@ -212,43 +264,6 @@ def call_gemini_api(prompt, system_instruction=None):
         print(f"Gemini API Error: {e}")
         return ""
 
-def detect_language(content, mime_type=None):
-    if not client: return "MATCH"
-    prompt = (
-        f"Detect the primary spoken or written language of the provided content. "
-        f"The language of this instruction is irrelevant — analyze only the content itself. "
-        f"If the content language matches '{lang}', output: MATCH. "
-        f"If there is no speech or text in the content at all, output: MATCH. "
-        f"If you are not confident, output: MATCH. "
-        f"Otherwise output only the English name of the detected language, e.g.: English"
-    )
-
-    try:
-        system_instruction = (
-            "You are a strict language classifier. "
-            "Output ONLY a single word: either 'MATCH' or the English name of the language. "
-            "No punctuation, no explanation, no extra words."
-        )
-        config = types.GenerateContentConfig(temperature=0.0, system_instruction=system_instruction)
-        if mime_type:
-            contents = [prompt, types.Part.from_bytes(data=content, mime_type=mime_type)]
-        else:
-            text_sample = "\n".join(content)[:2000] if isinstance(content, list) else str(content)[:2000]
-            contents = [prompt, text_sample]
-
-        response = client.models.generate_content(
-            model=model_name, contents=contents, config=config
-        )
-        if response.text:
-            result = response.text.strip()
-            # If model returned more than one word it's confused — treat as MATCH
-            if " " in result or "\n" in result:
-                return "MATCH"
-            return "MATCH" if result.upper() == "MATCH" else result
-        return "MATCH"
-    except Exception as e:
-        print(f"Language Detection Error: {e}")
-        return "MATCH"
 
 # --- YOUTUBE & FILES (Исправлен импорт) ---
 
@@ -387,23 +402,14 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         new_file = await context.bot.get_file(file_obj.file_id)
         file_bytes = await new_file.download_as_bytearray()
         loop = asyncio.get_running_loop()
-        
-        detected_lang = await loop.run_in_executor(None, detect_language, file_bytes, mime_type)
-        if detected_lang != "MATCH":
-            req_id = str(uuid.uuid4())[:8]
-            context.chat_data[req_id] = {
-                "type": "media",
-                "file_bytes": file_bytes,
-                "mime_type": mime_type,
-                "prompt": prompt
-            }
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-            ])
-            await update.message.reply_text(f"Язык материала: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+        content_lang = await loop.run_in_executor(None, detect_media_language, file_bytes, mime_type)
+        print(f"Detected media language: {content_lang}")
+        if content_lang.lower() != "russian":
+            await ask_lang_choice(
+                update.message.reply_text, context, chat_id, content_lang,
+                "pending_media", {"file_bytes": bytes(file_bytes), "mime_type": mime_type, "prompt": prompt},
+            )
             return
-            
         summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
         await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
@@ -426,21 +432,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 t = page.extract_text()
                 if t: text_array.append(t)
             loop = asyncio.get_running_loop()
-            
-            detected_lang = await loop.run_in_executor(None, detect_language, text_array, None)
-            if detected_lang != "MATCH":
-                req_id = str(uuid.uuid4())[:8]
-                context.chat_data[req_id] = {
-                    "type": "text",
-                    "text_array": text_array
-                }
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                    [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-                ])
-                await update.message.reply_text(f"Язык документа: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+            content_lang = await loop.run_in_executor(None, detect_content_language, " ".join(text_array))
+            print(f"Detected PDF language: {content_lang}")
+            if content_lang.lower() != "russian":
+                await ask_lang_choice(
+                    update.message.reply_text, context, chat_id, content_lang,
+                    "pending_text_array", text_array,
+                )
                 return
-                
             summary = await loop.run_in_executor(None, summarize, text_array, lang)
             await update.message.reply_text(f"**PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
@@ -465,20 +464,13 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                       "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
                       "for news give a concise factual summary; for other content describe what is shown.")
             loop = asyncio.get_running_loop()
-            detected_lang = await loop.run_in_executor(None, detect_language, file_bytes, mime_type)
-            if detected_lang != "MATCH":
-                req_id = str(uuid.uuid4())[:8]
-                context.chat_data[req_id] = {
-                    "type": "media",
-                    "file_bytes": file_bytes,
-                    "mime_type": mime_type,
-                    "prompt": prompt
-                }
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                    [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-                ])
-                await update.message.reply_text(f"Язык материала: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+            content_lang = await loop.run_in_executor(None, detect_media_language, file_bytes, mime_type)
+            print(f"Detected video-doc language: {content_lang}")
+            if content_lang.lower() != "russian":
+                await ask_lang_choice(
+                    update.message.reply_text, context, chat_id, content_lang,
+                    "pending_media", {"file_bytes": bytes(file_bytes), "mime_type": mime_type, "prompt": prompt},
+                )
                 return
             summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
             await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
@@ -500,22 +492,26 @@ async def process_request(user_input, chat_id, update, context):
             await context.bot.send_message(chat_id=chat_id, text=msg)
             return
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
+        # Detect language of the content
         loop = asyncio.get_running_loop()
-        
-        detected_lang = await loop.run_in_executor(None, detect_language, text_array, None)
-        if detected_lang != "MATCH":
-            req_id = str(uuid.uuid4())[:8]
-            context.chat_data[req_id] = {
-                "type": "text",
-                "text_array": text_array
-            }
+        content_lang = await loop.run_in_executor(None, detect_content_language, " ".join(text_array))
+        print(f"Detected content language: {content_lang}")
+        if content_lang.lower() != "russian":
+            # Ask user which language to respond in
+            context.user_data["pending_text_array"] = text_array
+            context.user_data["pending_content_lang"] = content_lang
             keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
+                [
+                    InlineKeyboardButton("🇷🇺 На русском", callback_data="choose_lang_russian"),
+                    InlineKeyboardButton(f"🌐 На языке оригинала ({content_lang})", callback_data="choose_lang_original"),
+                ]
             ])
-            await context.bot.send_message(chat_id=chat_id, text=f"Язык текста: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"Контент обнаружен на языке: {content_lang}.\nНа каком языке хотите получить ответ?",
+                reply_markup=keyboard,
+            )
             return
-            
         summary = await loop.run_in_executor(None, summarize, text_array, lang)
         await context.bot.send_message(chat_id=chat_id, text=f"{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
@@ -525,34 +521,32 @@ async def process_request(user_input, chat_id, update, context):
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    if query.data.startswith("lang|"):
-        _, req_id, chosen_lang = query.data.split("|")
-        req_data = context.chat_data.get(req_id)
-        if not req_data:
-            await query.edit_message_text("❌ Запрос устарел или не найден.")
+
+    if query.data in ("choose_lang_russian", "choose_lang_original"):
+        text_array = context.user_data.pop("pending_text_array", None)
+        content_lang = context.user_data.pop("pending_content_lang", "English")
+        if not text_array:
+            await query.message.reply_text("Не найден сохранённый контент. Попробуйте отправить снова.")
             return
-            
-        await query.edit_message_text(f"⏳ Генерирую ответ на языке: {chosen_lang}...")
+        target = "Russian" if query.data == "choose_lang_russian" else content_lang
+        await query.message.edit_reply_markup(reply_markup=None)
+        await query.message.reply_text(f"Обрабатываю на языке: {target}...")
         loop = asyncio.get_running_loop()
-        
-        try:
-            if req_data["type"] == "media":
-                summary = await loop.run_in_executor(
-                    None, analyze_media, 
-                    req_data["file_bytes"], req_data["mime_type"], req_data["prompt"], chosen_lang
-                )
-            else:
-                summary = await loop.run_in_executor(
-                    None, summarize, 
-                    req_data["text_array"], chosen_lang
-                )
-            await query.edit_message_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
-        except Exception as e:
-            print(f"Error processing language callback: {e}")
-            await query.edit_message_text(f"❌ Ошибка генерации: {e}")
-        finally:
-            del context.chat_data[req_id]
+        # text_array case
+        if text_array:
+            summary = await loop.run_in_executor(None, summarize, text_array, target)
+            await query.message.reply_text(summary, reply_markup=get_inline_keyboard_buttons())
+            return
+        # media case
+        media = context.user_data.pop("pending_media", None)
+        if media:
+            summary = await loop.run_in_executor(
+                None, analyze_media,
+                media["file_bytes"], media["mime_type"], media["prompt"], target
+            )
+            await query.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
+            return
+        await query.message.reply_text("Не найден сохранённый контент. Попробуйте отправить снова.")
         return
 
     if query.data == "explore_similar":
