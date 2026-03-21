@@ -14,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ApplicationBuilder, ContextTypes
 from youtube_transcript_api import YouTubeTranscriptApi
 
-# --- КОНФИГУРАЦИЯ ---
+# --- CONFIGURATION ---
 telegram_token = os.environ.get("TELEGRAM_TOKEN", "xxx")
 model_name = os.environ.get("LLM_MODEL", "gemini-flash-latest") 
 lang = os.environ.get("TS_LANG", "Russian") 
@@ -27,7 +27,7 @@ client = None
 if google_api_key:
     client = genai.Client(api_key=google_api_key)
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+# --- HELPER FUNCTIONS ---
 
 def print_available_models():
     if not client: return
@@ -57,7 +57,7 @@ def scrape_text_from_url(url):
         print(f"Error scraping: {e}")
         return []
 
-# --- ПОИСК ЧЕРЕЗ GOOGLE API ---
+# --- SEARCH VIA GOOGLE API ---
 async def search_results(keywords):
     if not google_cse_id:
         print("❌ Ошибка: Не задан GOOGLE_CSE_ID")
@@ -95,7 +95,7 @@ async def search_results(keywords):
         print(f"Search Request Failed: {e}")
         return []
 
-# --- ГЕНЕРАЦИЯ ---
+# --- GENERATION ---
 
 def summarize(text_array, target_lang=None):
     if target_lang is None:
