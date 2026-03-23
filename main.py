@@ -131,6 +131,7 @@ def summarize(text_array):
             "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
             "Do NOT use bold (**), italics (*), headers (#), or links []. "
             "Do NOT use LaTeX or dollar signs ($). "
+            "Do NOT start your response with introductory labels like 'Type of content:', 'Summary:', or 'Краткое описание основного содержания:'."
         )
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
@@ -168,6 +169,7 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
         "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
         "Do NOT use bold (**), italics (*), headers (#), or links []. "
         "Do NOT use LaTeX or dollar signs ($). "
+        "Do NOT start your response with introductory labels like 'Type of content:', 'Summary:', or 'Краткое описание основного содержания:'."
     )
     try:
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
