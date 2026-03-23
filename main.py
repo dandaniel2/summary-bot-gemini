@@ -123,8 +123,7 @@ def summarize(text_array):
         system_instruction = (
             f"You are an expert content analyst. Respond in {lang}. "
             f"Current date and time: {current_time}. "
-            "First, determine the type of content: educational/lecture, news, or other. "
-            "Then adapt your output accordingly: "
+            "Analyze the content and provide the appropriate output based on its type (educational, news, or other): "
             "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
             "- News: provide a concise factual summary covering who, what, when, where, why. "
             "- Other: provide a clear, concise summary of the main points. "
@@ -161,8 +160,7 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     system_instruction = (
         f"You are an expert content analyst. Analyze the provided media. Respond in {lang}. "
         f"Current date and time: {current_time}. "
-        "First, determine the type of content: educational/lecture, news, or other. "
-        "Then adapt your output accordingly: "
+        "Analyze the content and provide the appropriate output based on its type (educational, news, or other): "
         "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
         "- News: provide a concise factual summary covering who, what, when, where, why. "
         "- Other: provide a clear, concise summary of the main points. "
@@ -307,25 +305,26 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
-        prompt = (f"Listen to this audio. First identify its type (educational lecture, news, or other), "
-                  f"then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
-                  f"for news give a concise factual summary. Respond in {lang}.")
+        prompt = (f"Listen to this audio. Analyze its content (educational lecture, news, or other). "
+                  f"For educational content list all rules, definitions, formulas, and examples. "
+                  f"For news give a concise factual summary. ONLY output the final text. Do NOT output the content type or introductory phrases. Respond in {lang}.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Слушаю...")
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
-        prompt = (f"Listen to this audio. First identify its type (educational lecture, news, or other), "
-                  f"then provide the appropriate  educational content list all rules, definitions, formulas, and examples; "
-                  f"for news give a concise factual summary. Respond in {lang}.")
+        prompt = (f"Listen to this audio. Analyze its content (educational lecture, news, or other). "
+                  f"For educational content list all rules, definitions, formulas, and examples. "
+                  f"For news give a concise factual summary. ONLY output the final text. Do NOT output the content type or introductory phrases. Respond in {lang}.")
         action = "UPLOAD_VOICE"
         await update.message.reply_text("Анализирую аудио...")
     elif message.video:
         file_obj = message.video
         mime_type = file_obj.mime_type or "video/mp4"
-        prompt = (f"Watch this video. First identify its type (educational lecture, news or other), "
-                  f"then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
-                  f"for news give a concise factual summary; for other content describe what is shown. Respond in {lang}.")
+        prompt = (f"Watch this video. Analyze its content (educational lecture, news or other). "
+                  f"For educational: list all rules, definitions, formulas, and examples. "
+                  f"For news: concise factual summary. For other: describe what is shown. "
+                  f"ONLY output the final text. Do NOT output the content type or introductory phrases. Respond in {lang}.")
         action = "UPLOAD_VIDEO"
         await update.message.reply_text("Анализирую видео...")
     elif message.video_note:
@@ -377,7 +376,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "image" in doc.mime_type or "audio" in doc.mime_type:
         await update.message.reply_text("Отправьте как Фото/Аудио, а не как Файл.")
     elif "video" in doc.mime_type:
-        await update.message.reply_text("Видео-файл получен как документ.")
+        # await update.message.reply_text("Видео-файл получен как документ.")
         await context.bot.send_chat_action(chat_id=chat_id, action="UPLOAD_VIDEO")
         try:
             file_size = doc.file_size or 0
@@ -387,9 +386,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             new_file = await context.bot.get_file(doc)
             file_bytes = await new_file.download_as_bytearray()
             mime_type = doc.mime_type or "video/mp4"
-            prompt = (f"Watch this video. First identify its type (educational lecture, news or other), "
-                      f"then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
-                      f"for news give a concise factual summary; for other content describe what is shown. Respond in {lang}.")
+            prompt = (f"Watch this video. Analyze its content (educational lecture, news or other). "
+                      f"For educational: list all rules, definitions, formulas, and examples. "
+                      f"For news: concise factual summary. For other: describe what is shown. "
+                      f"ONLY output the final text. Do NOT output the content type or introductory phrases. Respond in {lang}.")
             loop = asyncio.get_running_loop()
             summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
             await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
