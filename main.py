@@ -2,7 +2,6 @@ import asyncio
 import os
 import re
 import time
-import uuid
 import urllib.parse
 import requests
 import trafilatura
@@ -15,7 +14,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import CommandHandler, MessageHandler, CallbackQueryHandler, filters, ApplicationBuilder, ContextTypes
 from youtube_transcript_api import YouTubeTranscriptApi
 
-# --- КОНФИГУРАЦИЯ ---
+# --- CONFIGURATION ---
 telegram_token = os.environ.get("TELEGRAM_TOKEN", "xxx")
 model_name = os.environ.get("LLM_MODEL", "gemini-flash-latest") 
 lang = os.environ.get("TS_LANG", "Russian") 
@@ -28,7 +27,7 @@ client = None
 if google_api_key:
     client = genai.Client(api_key=google_api_key)
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+# --- HELPER FUNCTIONS ---
 
 def print_available_models():
     if not client: return
@@ -96,11 +95,9 @@ async def search_results(keywords):
         print(f"Search Request Failed: {e}")
         return []
 
-# --- ГЕНЕРАЦИЯ ---
+# --- GENERATION ---
 
-def summarize(text_array, target_lang=None):
-    if target_lang is None:
-        target_lang = lang
+def summarize(text_array):
     def create_chunks(paragraphs):
         chunks = []
         chunk = ''
@@ -124,7 +121,7 @@ def summarize(text_array, target_lang=None):
         summaries = []
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         system_instruction = (
-            f"You are an expert content analyst. Respond in {target_lang}. "
+            f"You are an expert content analyst. Respond in {lang}. "
             f"Current date and time: {current_time}. "
             "First, determine the type of content: educational/lecture, news, or other. "
             "Then adapt your output accordingly: "
@@ -149,21 +146,19 @@ def summarize(text_array, target_lang=None):
         if len(summaries) == 1: return summaries[0]
         
         summary = ' '.join(summaries)
-        final_prompt = f"Combine these points into a final summary in {target_lang}:\n{summary}"
+        final_prompt = f"Combine these points into a final summary in {lang}:\n{summary}"
         return call_gemini_with_retry(final_prompt, system_instruction)
 
     except Exception as e:
         print(f"Summarize Error: {e}")
         return f"Error: {e}"
 
-def analyze_media(file_bytes, mime_type, prompt_text="Summarize this.", target_lang=None):
-    if target_lang is None:
-        target_lang = lang
+def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     if not client: return "API Key Error"
 
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_instruction = (
-        f"You are an expert content analyst. Analyze the provided media. Respond in {target_lang}. "
+        f"You are an expert content analyst. Analyze the provided media. Respond in {lang}. "
         f"Current date and time: {current_time}. "
         "First, determine the type of content: educational/lecture, news, or other. "
         "Then adapt your output accordingly: "
@@ -211,29 +206,7 @@ def call_gemini_api(prompt, system_instruction=None):
         print(f"Gemini API Error: {e}")
         return ""
 
-def detect_language(content, mime_type=None):
-    if not client: return "MATCH"
-    prompt = f"Detect the primary language of the following content. If it closely matches '{lang}', reply ONLY with the word 'MATCH'. Otherwise, reply ONLY with the English name of the detected language (e.g. 'English', 'Spanish'). Do not provide any other text."
-    
-    try:
-        config = types.GenerateContentConfig(temperature=0.1)
-        if mime_type:
-            contents = [types.Part.from_bytes(data=content, mime_type=mime_type), prompt]
-        else:
-            text_sample = "\n".join(content)[:2000] if isinstance(content, list) else str(content)[:2000]
-            contents = [prompt, text_sample]
-            
-        response = client.models.generate_content(
-            model=model_name, contents=contents, config=config
-        )
-        if response.text:
-            return response.text.strip().upper() if response.text.strip().upper() == "MATCH" else response.text.strip()
-        return "MATCH"
-    except Exception as e:
-        print(f"Language Detection Error: {e}")
-        return "MATCH"
-
-# --- YOUTUBE & FILES (Исправлен импорт) ---
+# --- YOUTUBE & FILES ---
 
 def extract_youtube_transcript(youtube_url):
     try:
@@ -332,7 +305,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     elif message.voice:
         file_obj = message.voice
         mime_type = "audio/ogg"
-        prompt = ("Listen to this audio. First identify its type (educational lecture, news or other), "
+        prompt = ("Listen to this audio. First identify its type (educational lecture, news, or other), "
                   "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
                   "for news give a concise factual summary.")
         action = "UPLOAD_VOICE"
@@ -340,7 +313,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
     elif message.audio:
         file_obj = message.audio
         mime_type = file_obj.mime_type or "audio/mpeg"
-        prompt = ("Listen to this audio. First identify its type (educational lecture, news or other), "
+        prompt = ("Listen to this audio. First identify its type (educational lecture, news, or other), "
                   "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
                   "for news give a concise factual summary.")
         action = "UPLOAD_VOICE"
@@ -370,24 +343,7 @@ async def handle_media_message(update: Update, context: ContextTypes.DEFAULT_TYP
         new_file = await context.bot.get_file(file_obj.file_id)
         file_bytes = await new_file.download_as_bytearray()
         loop = asyncio.get_running_loop()
-        
-        detected_lang = await loop.run_in_executor(None, detect_language, file_bytes, mime_type)
-        if detected_lang != "MATCH":
-            req_id = str(uuid.uuid4())[:8]
-            context.chat_data[req_id] = {
-                "type": "media",
-                "file_bytes": file_bytes,
-                "mime_type": mime_type,
-                "prompt": prompt
-            }
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-            ])
-            await update.message.reply_text(f"Язык материала: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
-            return
-            
-        summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
+        summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
         await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Media Error: {e}")
@@ -409,22 +365,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 t = page.extract_text()
                 if t: text_array.append(t)
             loop = asyncio.get_running_loop()
-            
-            detected_lang = await loop.run_in_executor(None, detect_language, text_array, None)
-            if detected_lang != "MATCH":
-                req_id = str(uuid.uuid4())[:8]
-                context.chat_data[req_id] = {
-                    "type": "text",
-                    "text_array": text_array
-                }
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                    [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-                ])
-                await update.message.reply_text(f"Язык документа: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
-                return
-                
-            summary = await loop.run_in_executor(None, summarize, text_array, lang)
+            summary = await loop.run_in_executor(None, summarize, text_array)
             await update.message.reply_text(f"**PDF Summary:**\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
             print(f"PDF Error: {e}")
@@ -484,22 +425,7 @@ async def process_request(user_input, chat_id, update, context):
             return
         await context.bot.send_chat_action(chat_id=chat_id, action="TYPING")
         loop = asyncio.get_running_loop()
-        
-        detected_lang = await loop.run_in_executor(None, detect_language, text_array, None)
-        if detected_lang != "MATCH":
-            req_id = str(uuid.uuid4())[:8]
-            context.chat_data[req_id] = {
-                "type": "text",
-                "text_array": text_array
-            }
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-            ])
-            await context.bot.send_message(chat_id=chat_id, text=f"Язык текста: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
-            return
-            
-        summary = await loop.run_in_executor(None, summarize, text_array, lang)
+        summary = await loop.run_in_executor(None, summarize, text_array)
         await context.bot.send_message(chat_id=chat_id, text=f"{summary}", reply_markup=get_inline_keyboard_buttons())
     except Exception as e:
         print(f"Processing Error: {e}")
@@ -508,36 +434,6 @@ async def process_request(user_input, chat_id, update, context):
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    
-    if query.data.startswith("lang|"):
-        _, req_id, chosen_lang = query.data.split("|")
-        req_data = context.chat_data.get(req_id)
-        if not req_data:
-            await query.edit_message_text("❌ Запрос устарел или не найден.")
-            return
-            
-        await query.edit_message_text(f"⏳ Генерирую ответ на языке: {chosen_lang}...")
-        loop = asyncio.get_running_loop()
-        
-        try:
-            if req_data["type"] == "media":
-                summary = await loop.run_in_executor(
-                    None, analyze_media, 
-                    req_data["file_bytes"], req_data["mime_type"], req_data["prompt"], chosen_lang
-                )
-            else:
-                summary = await loop.run_in_executor(
-                    None, summarize, 
-                    req_data["text_array"], chosen_lang
-                )
-            await query.edit_message_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
-        except Exception as e:
-            print(f"Error processing language callback: {e}")
-            await query.edit_message_text(f"❌ Ошибка генерации: {e}")
-        finally:
-            del context.chat_data[req_id]
-        return
-
     if query.data == "explore_similar":
         clean_text = query.message.text
         for garbage in ["Результат из Web App:", "Результат:", "PDF Summary:", "Саммари аудио:"]:
@@ -576,7 +472,7 @@ def main():
     app = ApplicationBuilder().token(telegram_token).build()
     app.add_handler(CommandHandler('start', handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summarize))
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE, handle_media_message))
+    app.add_handler(MessageHandler(filteвrs.PHOTO | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE, handle_media_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(handle_button_click))
     print("Bot is polling...")
