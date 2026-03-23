@@ -389,7 +389,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                       "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
                       "for news give a concise factual summary; for other content describe what is shown.")
             loop = asyncio.get_running_loop()
-            summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
+            summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt)
             await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
             print(f"Video Doc Error: {e}")
