@@ -389,21 +389,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
                       "then provide the appropriate output: for educational content list all rules, definitions, formulas, and examples; "
                       "for news give a concise factual summary; for other content describe what is shown.")
             loop = asyncio.get_running_loop()
-            detected_lang = await loop.run_in_executor(None, detect_language, file_bytes, mime_type)
-            if detected_lang != "MATCH":
-                req_id = str(uuid.uuid4())[:8]
-                context.chat_data[req_id] = {
-                    "type": "media",
-                    "file_bytes": file_bytes,
-                    "mime_type": mime_type,
-                    "prompt": prompt
-                }
-                keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"Ответить на {lang}", callback_data=f"lang|{req_id}|{lang}")],
-                    [InlineKeyboardButton(f"Ответить на {detected_lang}", callback_data=f"lang|{req_id}|{detected_lang}")]
-                ])
-                await update.message.reply_text(f"Язык материала: {detected_lang}. На каком языке написать ответ?", reply_markup=keyboard)
-                return
             summary = await loop.run_in_executor(None, analyze_media, file_bytes, mime_type, prompt, lang)
             await update.message.reply_text(f"Результат:\n\n{summary}", reply_markup=get_inline_keyboard_buttons())
         except Exception as e:
@@ -472,7 +457,7 @@ def main():
     app = ApplicationBuilder().token(telegram_token).build()
     app.add_handler(CommandHandler('start', handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_summarize))
-    app.add_handler(MessageHandler(filteвrs.PHOTO | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE, handle_media_message))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VOICE | filters.AUDIO | filters.VIDEO | filters.VIDEO_NOTE, handle_media_message))
     app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
     app.add_handler(CallbackQueryHandler(handle_button_click))
     print("Bot is polling...")
