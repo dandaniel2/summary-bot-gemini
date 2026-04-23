@@ -123,20 +123,19 @@ def summarize(text_array):
         system_instruction = (
             f"You are an expert content analyst. Respond in {lang}. "
             f"Current date and time: {current_time}. "
-            "Analyze the content and provide the appropriate output based on its type (educational, news, or other): "
+            "Silently determine the content type and provide the appropriate output: "
             "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
             "- News: provide a concise factual summary covering who, what, when, where, why. "
             "- Other: provide a clear, concise summary of the main points. "
-            "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
+            "IMPORTANT: Do NOT state, label, or mention the content type in your response. Jump straight into the output. "
+            "Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
             "Do NOT use bold (**), italics (*), headers (#), or links []. "
             "Do NOT use LaTeX or dollar signs ($). "
-            "Do NOT start your response with introductory labels like 'Type of content:', 'Summary:', or 'Краткое описание основного содержания:'."
         )
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
             prompt = (
-                f"Analyze the following content. First identify its type (educational, news, or other), "
-                f"then provide the appropriate structured output as instructed:\n{chunk}"
+                f"Provide the appropriate structured output for the following content as instructed:\n{chunk}"
             )
             result = call_gemini_with_retry(prompt, system_instruction)
             if result: summaries.append(result)
@@ -160,14 +159,14 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
     system_instruction = (
         f"You are an expert content analyst. Analyze the provided media. Respond in {lang}. "
         f"Current date and time: {current_time}. "
-        "Analyze the content and provide the appropriate output based on its type (educational, news, or other): "
+        "Silently determine the content type and provide the appropriate output: "
         "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
         "- News: provide a concise factual summary covering who, what, when, where, why. "
         "- Other: provide a clear, concise summary of the main points. "
-        "IMPORTANT: Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
+        "IMPORTANT: Do NOT state, label, or mention the content type in your response. Jump straight into the output. "
+        "Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
         "Do NOT use bold (**), italics (*), headers (#), or links []. "
         "Do NOT use LaTeX or dollar signs ($). "
-        "Do NOT start your response with introductory labels like 'Type of content:', 'Summary:', or 'Краткое описание основного содержания:'."
     )
     try:
         config = types.GenerateContentConfig(system_instruction=system_instruction, temperature=0.3)
