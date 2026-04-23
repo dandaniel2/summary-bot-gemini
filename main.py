@@ -69,7 +69,7 @@ async def search_results(keywords):
         'key': google_api_key,
         'cx': google_cse_id,
         'q': keywords,
-        'num': 3
+        'num': 5
     }
     
     try:
@@ -95,9 +95,22 @@ async def search_results(keywords):
         print(f"Search Request Failed: {e}")
         return []
 
-# --- GENERATION ---
+# --- ГЕНЕРАЦИЯ ---
 
-def summarize(text_array):
+def strip_content_type_label(text):
+    """Remove any leading label line that ends with a colon (e.g. 'Образовательный/лекционный материал:')"""
+    if not text:
+        return text
+    lines = text.split('\n')
+    first = lines[0].strip()
+    if first.endswith(':') and len(first) < 80 and not first[0].isdigit():
+        lines = lines[1:]
+        while lines and not lines[0].strip():
+            lines = lines[1:]
+    return '\n'.join(lines)
+
+def summarize(text_array, target_lang=None):
+    if target_lang is None: target_lang = lang
     def create_chunks(paragraphs):
         chunks = []
         chunk = ''
@@ -121,51 +134,53 @@ def summarize(text_array):
         summaries = []
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         system_instruction = (
-            f"You are an expert content analyst. Respond in {lang}. "
+            f"You are an expert content analyst. Respond in {target_lang}. "
             f"Current date and time: {current_time}. "
-            "Silently determine the content type and provide the appropriate output: "
-            "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
-            "- News: provide a concise factual summary covering who, what, when, where, why. "
-            "- Other: provide a clear, concise summary of the main points. "
-            "IMPORTANT: Do NOT state, label, or mention the content type in your response. Jump straight into the output. "
-            "Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
-            "Do NOT use bold (**), italics (*), headers (#), or links []. "
+            "Extract the key information from the content and present it clearly. "
+            "For lectures or educational material: list all rules, definitions, formulas, exceptions, and examples as a numbered list. "
+            "For news or articles: give a concise factual summary. "
+            "For other content: summarize the main points. "
+            "CRITICAL: Your response MUST start directly with the content (a number, a word, a sentence). "
+            "Do NOT write any heading, label, title, or category name at the start. "
+            "Write in PLAIN TEXT ONLY. No Markdown, no bold (**), no italics (*), no headers (#), no links []. "
             "Do NOT use LaTeX or dollar signs ($). "
         )
         for i, chunk in enumerate(tqdm(text_chunks, desc="Summarizing")):
             if not chunk.strip(): continue
             prompt = (
-                f"Provide the appropriate structured output for the following content as instructed:\n{chunk}"
+                f"Extract and present the key information from the following content:\n{chunk}"
             )
             result = call_gemini_with_retry(prompt, system_instruction)
-            if result: summaries.append(result)
+            if result: summaries.append(strip_content_type_label(result))
             if i < len(text_chunks) - 1: time.sleep(2)
 
         if not summaries: return "Ошибка: пустой ответ."
-        if len(summaries) == 1: return summaries[0]
+        if len(summaries) == 1: return strip_content_type_label(summaries[0])
         
         summary = ' '.join(summaries)
-        final_prompt = f"Combine these points into a final summary in {lang}:\n{summary}"
-        return call_gemini_with_retry(final_prompt, system_instruction)
+        final_prompt = f"Combine these points into a final summary in {target_lang}:\n{summary}"
+        result = call_gemini_with_retry(final_prompt, system_instruction)
+        return strip_content_type_label(result)
 
     except Exception as e:
         print(f"Summarize Error: {e}")
         return f"Error: {e}"
 
-def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
+def analyze_media(file_bytes, mime_type, prompt_text="Summarize this.", target_lang=None):
+    if target_lang is None: target_lang = lang
     if not client: return "API Key Error"
 
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_instruction = (
-        f"You are an expert content analyst. Analyze the provided media. Respond in {lang}. "
+        f"You are an expert content analyst. Analyze the provided media. Respond in {target_lang}. "
         f"Current date and time: {current_time}. "
-        "Silently determine the content type and provide the appropriate output: "
-        "- Educational/lecture: extract ALL specific rules, definitions, formulas, exceptions, and examples as a structured numbered list. Do NOT summarize or describe what the lecture is about. "
-        "- News: provide a concise factual summary covering who, what, when, where, why. "
-        "- Other: provide a clear, concise summary of the main points. "
-        "IMPORTANT: Do NOT state, label, or mention the content type in your response. Jump straight into the output. "
-        "Write in PLAIN TEXT ONLY. Do NOT use Markdown formatting. "
-        "Do NOT use bold (**), italics (*), headers (#), or links []. "
+        "Extract the key information from the content and present it clearly. "
+        "For lectures or educational material: list all rules, definitions, formulas, exceptions, and examples as a numbered list. "
+        "For news or audio: give a concise factual summary. "
+        "For other content: summarize the main points. "
+        "CRITICAL: Your response MUST start directly with the content (a number, a word, a sentence). "
+        "Do NOT write any heading, label, title, or category name at the start. "
+        "Write in PLAIN TEXT ONLY. No Markdown, no bold (**), no italics (*), no headers (#), no links []. "
         "Do NOT use LaTeX or dollar signs ($). "
     )
     try:
@@ -175,7 +190,7 @@ def analyze_media(file_bytes, mime_type, prompt_text="Summarize this."):
             contents=[types.Part.from_bytes(data=file_bytes, mime_type=mime_type), prompt_text],
             config=config
         )
-        if response.text: return response.text.strip()
+        if response.text: return strip_content_type_label(response.text.strip())
         return "Модель вернула пустой ответ."
     except Exception as e:
         if "429" in str(e): return "Превышены лимиты API (429)."
@@ -375,7 +390,6 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif "image" in doc.mime_type or "audio" in doc.mime_type:
         await update.message.reply_text("Отправьте как Фото/Аудио, а не как Файл.")
     elif "video" in doc.mime_type:
-        # await update.message.reply_text("Видео-файл получен как документ.")
         await context.bot.send_chat_action(chat_id=chat_id, action="UPLOAD_VIDEO")
         try:
             file_size = doc.file_size or 0
@@ -425,22 +439,36 @@ async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE
         for garbage in ["Результат из Web App:", "Результат:", "PDF Summary:", "Саммари аудио:"]:
             clean_text = clean_text.replace(garbage, "")
         
-        prompt = (f"{clean_text}\n"
-                  "Generate a SINGLE search query string for Google. "
-                  "Return ONLY the keywords separated by spaces. NO quotes.")
+        # Use only the first ~800 chars to avoid sending full summary noise
+        excerpt = clean_text.strip()[:800]
+        prompt = (
+            f"{excerpt}\n\n"
+            "Based on the text above, extract ONLY the core subject name or topic (e.g. a game title, movie name, person, company, etc.). "
+            "Return a SHORT Google search query of 2 to 4 words maximum. "
+            "Focus on the main noun/entity. Do NOT include descriptive adjectives, review words, or gameplay details. "
+            "Return ONLY the query, no quotes, no explanation."
+        )
         
         keywords = call_gemini_api(prompt).replace('"', '').strip()
+        # Safety: truncate to 5 words max
+        keywords = ' '.join(keywords.split()[:5])
         
         results = await search_results(keywords)
+        print(f"🔎 Keywords used: {keywords}")
+        
+        encoded = urllib.parse.quote(keywords)
+        google_url = f"https://www.google.com/search?q={encoded}"
         
         if results:
-            links = "\n".join([f"{r['title']} - {r['href']}" for r in results])
-            await query.message.reply_text(links, disable_web_page_preview=True)
-        else:
-            encoded = urllib.parse.quote(keywords)
+            links = "\n".join([f"{i+1}. {r['title']}\n{r['href']}" for i, r in enumerate(results)])
             await query.message.reply_text(
-                f"**Авто-поиск недоступен.**\n[Google: {keywords}](https://www.google.com/search?q={encoded})",
-                parse_mode="Markdown"
+                f"🔍 {keywords}\n\n{links}\n\n🔗 Поиск Google: {google_url}",
+                disable_web_page_preview=True
+            )
+        else:
+            await query.message.reply_text(
+                f"Не нашли результатов через API.\n🔗 Поиск Google: {google_url}",
+                disable_web_page_preview=True
             )
 
 def process_user_input(user_input):
